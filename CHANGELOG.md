@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- PyPI project page links to the GitHub repository, issues, and changelog.
+
 ## [1.1.0] - 2026-11-16
 
 Package version 1.1.0 matches git tag `v1.1`. `receiptd version`, `pyproject.toml`, and `health/health_endpoint.py` report 1.1.0. This entry does not create a tag or a GitHub release.
