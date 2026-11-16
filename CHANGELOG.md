@@ -8,6 +8,7 @@ Package version 1.1.0 matches git tag `v1.1`. `receiptd version`, `pyproject.tom
 - `receiptd init` writes new ledgers at `.receiptd/receipts.jsonl`. If that file is absent and `.birkin/receipts.jsonl` already exists, init keeps appending to the old file.
 - `receiptd card --demo` reads the red demo session shipped in the package (`receiptd/card/demo/red.jsonl`).
 - README, `THREAT_MODEL.md`, and `IMPLEMENTATION_STATUS.md` describe a fail-closed gate for hooked tool calls.
+- Install from PyPI with `pip install receiptd`.
 
 ## [1.0.0] - 2026-11-10
 

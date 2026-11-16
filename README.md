@@ -10,6 +10,7 @@ Receiptd is a fail-closed gate for hooked AI agent tool calls.
 [![Claude Code Hook](https://img.shields.io/badge/Claude_Code-PreToolUse_Gate-10B981?style=flat-square)](#quickstart)
 [![Cryptography](https://img.shields.io/badge/crypto-Ed25519_%2B_canonical_JSON_(sorted_keys)-0B0D11?style=flat-square)](#cryptographic-receipt-specification)
 [![Receiptd CI](https://github.com/NickAltstein/receiptd/actions/workflows/ci.yml/badge.svg)](https://github.com/NickAltstein/receiptd/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/receiptd?style=flat-square)](https://pypi.org/project/receiptd/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](./LICENSE)
 
 **A fail-closed gate for hooked AI agent tool calls, with Ed25519-signed receipts and offline hash-chain checking.**
@@ -21,7 +22,7 @@ LLM judge prompts are probabilistic and add a model call to each decision. Recei
 ## Quickstart
 
 ```bash
-pip install git+https://github.com/NickAltstein/receiptd
+pip install receiptd
 receiptd init --claude-code
 receiptd card --demo
 receiptd verify-card card.json
@@ -81,7 +82,7 @@ Do not rely on advisory `SKILL.md` prompts that an injected LLM can ignore. Inst
 
 ```bash
 # Wires .claude/settings.json PreToolUse + Stop hooks and installs audit skill
-pip install git+https://github.com/NickAltstein/receiptd && receiptd init --claude-code
+pip install receiptd && receiptd init --claude-code
 ```
 
 ### 1. PreToolUse Gate: Intercept Actions Before Execution
