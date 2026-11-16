@@ -94,9 +94,10 @@ def test_shell_wrapper_turns_import_failure_into_exit_2():
 
 
 def test_init_command_uses_this_interpreter():
-    command = pretooluse_hook_command(".birkin/pretooluse.policy.json")
+    command = pretooluse_hook_command(".receiptd/pretooluse.policy.json")
     assert command.startswith(sys.executable) or command.startswith(f"'{sys.executable}'")
     assert "receiptd.hooks.claude_code_gate" in command
+    assert ".receiptd/receipts.jsonl" in command
     assert command.endswith("|| exit 2")
     assert not command.startswith("python3 ")
 
@@ -140,12 +141,31 @@ def test_init_probe_blocks_known_bad_call(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     gate = settings["hooks"]["PreToolUse"][0]["hooks"][0]
-    assert gate["command"] == pretooluse_hook_command(".birkin/pretooluse.policy.json")
+    assert gate["command"] == pretooluse_hook_command(".receiptd/pretooluse.policy.json")
     assert gate["onFailure"] == "block"
-    ledger = tmp_path / ".birkin" / "receipts.jsonl"
+    ledger = tmp_path / ".receiptd" / "receipts.jsonl"
     lines = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
     assert lines[0]["decision"] == "deny"
     assert lines[0]["session_id"] == INIT_PROBE_PAYLOAD["session_id"]
+    assert "Receiptd initialization complete." in result.output
+    assert "AuditGPT" not in result.output
+    assert "Zero-Trust" not in result.output
+
+
+def test_init_keeps_existing_birkin_ledger(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("RECEIPTD_KEY_DIR", str(tmp_path / "keys"))
+    legacy = tmp_path / ".birkin" / "receipts.jsonl"
+    legacy.parent.mkdir()
+    legacy.write_text("")
+    result = runner.invoke(app, ["init", "--claude-code"])
+    assert result.exit_code == 0, result.output
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert ".birkin/receipts.jsonl" in command
+    assert not (tmp_path / ".receiptd" / "receipts.jsonl").exists()
+    assert legacy.read_text().strip()
 
 
 def _write_stub_python3(directory: Path) -> None:
@@ -211,7 +231,7 @@ def test_isolated_venv_install_blocks_known_bad_call(tmp_path):
     assert not command.startswith("python3 ")
 
     before = 0
-    ledger = project / ".birkin" / "receipts.jsonl"
+    ledger = project / ".receiptd" / "receipts.jsonl"
     if ledger.is_file():
         before = sum(1 for line in ledger.read_text().splitlines() if line.strip())
     probe = subprocess.run(

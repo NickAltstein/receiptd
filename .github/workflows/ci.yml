@@ -1,4 +1,4 @@
-name: Birkin CI Smoke Gate
+name: Receiptd CI
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Birkin (editable, with dev extras)
+      - name: Install Receiptd (editable, with dev extras)
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
