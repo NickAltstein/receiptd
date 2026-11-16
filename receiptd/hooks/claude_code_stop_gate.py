@@ -27,6 +27,7 @@ from ..crypto import (
     canonical_json,
     get_signing_key,
 )
+from .claude_code_gate import coerce_hook_status, hook_status_from_exception
 from ..ledger import (
     GENESIS_HASH,
     append_ledger_entry,
@@ -385,6 +386,14 @@ def run_stop_gate(
 
 
 def main() -> int:
+    """Run the stop gate. Any error becomes exit status 2, never 1."""
+    try:
+        return coerce_hook_status(_main_args())
+    except BaseException as exc:
+        return hook_status_from_exception(exc)
+
+
+def _main_args() -> int:
     parser = argparse.ArgumentParser(description="Receiptd Stop Hook Gate")
     parser.add_argument("--test-cmd", default=None, help="Command to run to verify tests (e.g. pytest, npm test)")
     parser.add_argument("--ledger", default=".receiptd/receipts.jsonl", help="Path to audit ledger")

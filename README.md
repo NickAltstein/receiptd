@@ -185,6 +185,7 @@ sequenceDiagram
 ## Engineering Guarantees
 
 - **Fail-Closed By Default**: Any unhandled exception, malformed JSON-RPC schema, missing policy context, or signature verification mismatch immediately halts execution before reaching the underlying runtime.
+- **Hook process must start**: If the hook process cannot start at all, Claude Code does not block the tool call. Claude Code blocks only when the hook exits 2; a command that never runs is not exit 2. `receiptd init` writes the absolute path of the Python interpreter that can import receiptd, ends that command with `|| exit 2` so a shell that starts but cannot run the interpreter still exits 2, and sets `onFailure` to `block` for Claude Code versions that honor it. Init then runs that interpreter on a known-bad tool call and refuses to report success unless the gate itself exits 2 and appends a deny receipt. Claude Code builds that ignore `onFailure` and never start the hook process still do not block.
 - **Deterministic Canonical Hashing**: Payloads are normalized via canonical JSON (sorted keys) prior to SHA-256 hashing, ensuring deterministic offline reproducibility.
 - **Deterministic In-Memory Gate**: Zero external LLM calls in the critical path (0.021 ms mean in-process; ~78 ms for a full cold hook invocation). Rule pattern evaluation and native Ed25519 signing run locally in memory.
 - **Tamper-Evident Audit Trail**: Each receipt embeds the `prev_hash` and updates a binary SHA-256 Merkle tree. Mutating a historical log entry invalidates all downstream cryptographic proofs.
