@@ -1,6 +1,16 @@
-# Birkin Threat Model
+# Receiptd Threat Model
 
-This document describes what the Birkin audit chain protects against, what it does not protect against, the verification methodology, and known limitations.
+This document describes what the Receiptd audit chain catches, what it does not catch, how that check is done, and known limitations.
+
+## Claude Code hook
+
+The PreToolUse hook in `.claude/settings.json` matches `Bash`, `Write`, `Edit`, `MultiEdit`, and MCP tools (`mcp__.*`). `Read`, `WebFetch`, `Grep`, `Glob`, and any other tool that does not match that pattern are not hooked. Those calls run with no receipt and no policy check.
+
+The Ed25519 signing key sits on the same host as the agent, in `~/.receiptd/receiptd_ed25519.pem`. Anyone who can read that file can sign receipts. `receiptd verify` checks a signature against the public key. It does not show that the host which held the key was safe.
+
+PreToolUse rules are regular expressions over the tool name plus canonical JSON (sorted keys) of the arguments. A command that hides a pattern such as `.env`, `curl`, or `rm -rf` (encoding, a renamed binary, or a split the regex does not see) is not denied by that rule.
+
+If the hook process cannot start at all, Claude Code does not block the tool call. Claude Code blocks only on exit code 2. `receiptd init` writes the absolute path of the interpreter that can import receiptd, ends the command with `|| exit 2`, and refuses to report success unless that interpreter exits 2 on a known-bad tool call and appends a deny receipt. Init also writes `onFailure: block`. Claude Code's own docs say not to rely on that field, so a process that never starts can still let the call through.
 
 ---
 
@@ -14,7 +24,7 @@ row_hash = SHA-256( prev_row_hash || payload_json )
 
 `verify-chain.py` walks every row in insertion order, recomputes each hash, and compares it to the stored value.
 
-### Attacks that verification detects
+### Attacks the hash-chain check catches
 
 **Row-level mutation** — any change to a row's payload (agent action, timestamp, parameters) breaks the hash of that row and every subsequent row.
 
@@ -28,21 +38,21 @@ row_hash = SHA-256( prev_row_hash || payload_json )
 
 ## What the Hash Chain Does Not Catch
 
-**Attacker controls the process before logging** — if an attacker can modify `audit-append.py` or the Hermes skill before an action is logged, they can forge a legitimate-looking chain entry. The chain proves that logged entries were not mutated after the fact; it does not prove that every agent action was logged in the first place.
+**Attacker controls the process before logging** — if an attacker can modify `audit-append.py` or the Hermes skill before an action is logged, they can forge a legitimate-looking chain entry. The chain shows that logged entries were not mutated after the fact. It does not show that every agent action was logged.
 
-**Attacker replaces the entire database** — if the `audit.db` file is replaced wholesale (rather than mutated), `verify-chain.py` will verify the replacement chain as valid. Mitigation: periodically record the chain tip hash out-of-band (e.g. Telegram alert with current tip hash, external monitoring endpoint).
+**Attacker replaces the entire database** — if the `audit.db` file is replaced wholesale (rather than mutated), `verify-chain.py` accepts the replacement chain. Mitigation: periodically record the chain tip hash out-of-band (e.g. Telegram alert with current tip hash, external monitoring endpoint).
 
-**Log omission** — an agent action that is never written to the log cannot be detected by chain verification. This is a logging completeness problem, not a chain integrity problem.
+**Log omission** — an agent action that is never written to the log cannot be detected by the hash-chain check. This is a logging completeness problem, not a chain integrity problem.
 
-**Verification tool compromise** — if `verify-chain.py` itself is modified to skip or silently pass broken chains, verification is meaningless. Mitigation: pin the scripts in git and check `git status` / `git diff` on the scripts directory.
+**Checker compromise** — if `verify-chain.py` itself is modified to skip or silently pass broken chains, the check is meaningless. Mitigation: pin the scripts in git and check `git status` / `git diff` on the scripts directory.
 
-**Insider / root access** — an attacker with root access can modify the SQLite file, replace the verification script, and overwrite the entire audit directory before you check. Birkin is not designed to defend against a fully compromised host.
+**Insider / root access** — an attacker with root access can modify the SQLite file, replace `verify-chain.py`, and overwrite the entire audit directory before you check. Receiptd is not designed to defend against a fully compromised host.
 
-**Behavioral accuracy** — the chain proves that a logged entry was not modified after writing. It does not prove that what was written accurately reflects what the agent actually did (e.g. a skill that logs "sourcing completed" but did nothing).
+**Behavioral accuracy** — a matching chain means the logged bytes were not modified after writing. It does not show that the logged text matches what the agent did (e.g. a skill that logs "sourcing completed" but did nothing).
 
 ---
 
-## Verification Methodology
+## How the hash chain is checked
 
 ### Automated (CI)
 
@@ -50,7 +60,7 @@ row_hash = SHA-256( prev_row_hash || payload_json )
 
 1. Creates a fresh in-memory SQLite database with the audit schema and triggers
 2. Appends 5 hash-chained rows via `scripts/audit-append.py`
-3. Verifies the clean chain (expected: PASS)
+3. Checks the clean chain (expected: PASS)
 4. Attempts an `UPDATE` through the normal interface (expected: trigger blocks it)
 5. Drops all triggers and directly rewrites row 3 via SQLite
 6. Runs `scripts/verify-chain.py` (expected: CHAIN BROKEN detected)
@@ -61,18 +71,18 @@ The test exits non-zero if any step produces an unexpected result. The CI badge 
 
 ```bash
 ./tests/tamper-test.sh        # full tamper simulation
-python3 scripts/verify-chain.py --db ~/.hermes/audit.db   # verify live chain
+python3 scripts/verify-chain.py --db ~/.hermes/audit.db   # check the live chain
 ```
 
 ---
 
 ## Policy Engine Threat Model (Filesystem, Network, & HITL Lifecycle)
 
-Birkin's policy engine (`birkin/policy.py`) evaluates tool invocations against structured rules prior to execution. The threat model defines defenses against common bypass techniques:
+Receiptd's policy engine (`receiptd/policy.py`) evaluates tool invocations against structured rules prior to execution. The threat model defines defenses against common bypass techniques:
 
 ### 1. Filesystem Containment & Traversal Defense
 
-| Attack Vector | Vulnerability Description | Birkin Mitigation |
+| Attack Vector | Vulnerability Description | Receiptd mitigation |
 | :--- | :--- | :--- |
 | **Sibling-Prefix Collision** | Naive `norm_path.startswith(prefix)` matches `/tmp/birkin-unsafe` against allowed `/tmp/birkin`. | Component-aware containment via `Path.is_relative_to()` enforces strict ancestor tree membership. |
 | **Directory Traversal** | Payload `/tmp/birkin/../../etc/shadow` escapes sandbox via relative dot-dot segments. | Normalized and canonical path resolution collapses segments before checking boundary ancestry. |
@@ -82,26 +92,26 @@ Birkin's policy engine (`birkin/policy.py`) evaluates tool invocations against s
 
 ### 2. Time-of-Check to Time-of-Use (TOCTOU) Limitations
 
-Policy evaluation verifies path containment at authorization time. If local directory contents or symlinks are swapped concurrently by an untrusted actor between authorization and syscall execution, a TOCTOU race can occur.
+Policy evaluation checks path containment at authorization time. If local directory contents or symlinks are swapped concurrently by an untrusted actor between authorization and syscall execution, a TOCTOU race can occur.
 
 **Remediation & Defense-in-Depth:**
 - Full mitigation against hostile local users requires OS-level primitives like `openat2(..., RESOLVE_BENEATH)` or Linux mount namespaces / cgroups at the execution runtime layer.
-- Birkin guarantees that authorization receipts are cryptographically bound to the checked arguments (`args_hash`), and execution is refused if arguments or identity are tampered.
+- Receiptd binds authorization receipts to the checked arguments (`args_hash`) and refuses execution if the arguments or identity change.
 
 ### 3. Human-in-the-Loop (HITL) State Machine Integrity
 
 Actions requiring human approval (`require_approval`) produce an signed intermediate receipt:
 
-- **Identity & Session Binding:** `engine.approve()` and `engine.reject()` verify that `receipt.agent_id` and `receipt.session_id` match the requesting caller. An approval or rejection cannot be hijacked by another agent or session.
-- **Cryptographic Signature Validation:** The engine verifies its own control-plane signature before allowing any state transition on a receipt.
+- **Identity and session binding:** `engine.approve()` and `engine.reject()` check that `receipt.agent_id` and `receipt.session_id` match the requesting caller. An approval or rejection cannot be hijacked by another agent or session.
+- **Signature check:** The engine checks its own control-plane signature before allowing any state transition on a receipt.
 - **Non-Reusable State Transitions:** Once a receipt is approved or rejected, its `receipt_id` is permanently marked resolved. Attempting duplicate approvals, duplicate rejections, or cross-transitioning (approve after reject) raises an immediate `ValueError`.
-- **Argument Integrity at Execution:** `engine.execute()` verifies that `sha256(canonical_json(request.args))` matches `receipt.args_hash`. Presenting an approved receipt with modified tool arguments triggers an immediate `execution.refused` alert.
+- **Argument integrity at execution:** `engine.execute()` checks that `sha256(canonical_json(request.args))` matches `receipt.args_hash`. Presenting an approved receipt with modified tool arguments triggers an immediate `execution.refused` alert.
 
 ---
 
 ## Known Limitations
 
-**Single-machine trust boundary.** The audit log and the agent run on the same host. An attacker who owns the host owns both. Birkin is appropriate for personal agents and teams where you trust the infrastructure operators; it is not a substitute for a tamper-evident log backed by an independent write endpoint or a distributed ledger.
+**Single-machine trust boundary.** The audit log and the agent run on the same host. An attacker who owns the host owns both. Receiptd is appropriate for personal agents and teams where you trust the infrastructure operators; it is not a substitute for a tamper-evident log backed by an independent write endpoint or a distributed ledger.
 
 **SQLite file permissions.** The database is protected by OS-level file permissions. On a single-user system this is reasonable; in a multi-user or container environment, ensure `audit.db` is not world-writable.
 
@@ -115,7 +125,7 @@ Actions requiring human approval (`require_approval`) produce an signed intermed
 
 ## Out of Scope
 
-The following are not goals of Birkin's current security model:
+The following are not goals of Receiptd's current security model:
 
 - Protecting against a compromised Hermes binary
 - Preventing prompt injection attacks on the agent

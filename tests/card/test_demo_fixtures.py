@@ -1,13 +1,14 @@
-"""End-to-end tests for the trifecta_demo fixtures.
+"""End-to-end tests for the packaged trifecta demo sessions.
 
 Anyone must be able to run:
-    receiptd card --session fixtures/trifecta_demo/red.jsonl
-and get a correct card without real user logs.
+    receiptd card --demo
+from an empty directory and get a card without real user logs.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,7 @@ from receiptd.cli import main
 from receiptd.card.pipeline import analyze_paths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEMO = REPO_ROOT / "fixtures" / "trifecta_demo"
+DEMO = REPO_ROOT / "receiptd" / "card" / "demo"
 
 
 @pytest.fixture(autouse=True)
@@ -121,18 +122,15 @@ def test_demo_green_cli(tmp_path, monkeypatch):
     assert payload["evidence"] == []
 
 
-def test_demo_cli_from_repo_root(tmp_path, monkeypatch):
-    """The README quickstart: run from the repository root."""
-    monkeypatch.chdir(REPO_ROOT)
-    try:
-        rc = main(["card", "--session", "fixtures/trifecta_demo/red.jsonl", "--out", str(tmp_path / "c.png")])
-        assert rc == 0
-        assert (tmp_path / "c.png").is_file()
-        assert (tmp_path / "c.json").is_file()
-    finally:
-        # never leave stray outputs in the repo
-        for stray in ("card.png", "card.svg", "card.json"):
-            (REPO_ROOT / stray).unlink(missing_ok=True)
+def test_demo_cli_from_empty_directory(tmp_path, monkeypatch):
+    """The README quickstart: card --demo does not need the git checkout."""
+    monkeypatch.chdir(tmp_path)
+    rc = main(["card", "--demo", "--out", str(tmp_path / "card.png")])
+    assert rc == 0
+    assert (tmp_path / "card.png").is_file()
+    assert (tmp_path / "card.json").is_file()
+    payload = json.loads((tmp_path / "card.json").read_text())
+    assert payload["verdict"]["level"] == "RED"
 
 
 def test_demo_subprocess_invocation(tmp_path):
@@ -152,6 +150,32 @@ def test_demo_subprocess_invocation(tmp_path):
     # privacy: no full private paths in the terminal output
     assert "/users/nick/.ssh" not in result.stdout
     assert "/users/nick/birkin/.env" not in result.stdout
+
+
+def test_card_demo_from_non_editable_install(tmp_path):
+    """pip install (not editable) still serves `receiptd card --demo` from an empty directory."""
+    venv = tmp_path / "venv"
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True, timeout=120)
+    subprocess.run(
+        [str(venv / "bin" / "pip"), "install", "--disable-pip-version-check", str(REPO_ROOT)],
+        check=True,
+        timeout=300,
+    )
+    result = subprocess.run(
+        [str(venv / "bin" / "receiptd"), "card", "--demo", "--out", str(empty / "card.png")],
+        capture_output=True,
+        text=True,
+        cwd=empty,
+        env={**os.environ, "HOME": str(tmp_path / "home"), "RECEIPTD_KEY_DIR": str(tmp_path / "keys")},
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (empty / "card.png").is_file()
+    assert (empty / "card.json").is_file()
+    payload = json.loads((empty / "card.json").read_text())
+    assert payload["verdict"]["level"] == "RED"
 
 
 # ---------------------------------------------------------------------------

@@ -95,9 +95,9 @@ def test_init_hook_timeout_above_default_deadline(tmp_path: Path):
     from receiptd.cli import pretooluse_hook_command
     from receiptd.hooks.claude_code_gate import default_policy_path
 
-    written = tmp_path / ".birkin" / "pretooluse.policy.json"
+    written = tmp_path / ".receiptd" / "pretooluse.policy.json"
     assert written.read_bytes() == default_policy_path().read_bytes()
-    assert gate["command"] == pretooluse_hook_command(".birkin/pretooluse.policy.json")
+    assert gate["command"] == pretooluse_hook_command(".receiptd/pretooluse.policy.json")
     assert sys.executable in gate["command"]
     assert "|| exit 2" in gate["command"]
     assert not gate["command"].startswith("python3 ")

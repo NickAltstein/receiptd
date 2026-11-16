@@ -1,4 +1,4 @@
-# Birkin Launch Checklist
+# Receiptd Launch Checklist
 
 All content below is ready to copy-paste. You post — no credentials or tokens needed from me.
 
@@ -14,7 +14,7 @@ All content below is ready to copy-paste. You post — no credentials or tokens 
 - [ ] **Post Reddit r/LocalLLaMA** — same day
 - [ ] **Post Reddit r/MachineLearning** — same day (can use the same post)
 - [ ] **Post Dev.to article** — write from `docs/social-media/devto-outline.md`
-- [ ] **Monitor + reply** — respond to every comment for the first 24 hours
+- [ ] **Monitor and reply** — respond to every comment for the opening 24 hours
 
 ---
 
@@ -25,34 +25,36 @@ All content below is ready to copy-paste. You post — no credentials or tokens 
 **Title:** (must start with "Show HN:")
 
 ```
-Show HN: Birkin — iPhone-controlled Hermes agent with hash-chained audit log and tamper detection
+Show HN: Receiptd — fail-closed gate for hooked AI agent tool calls, with a hash-chained audit log
 ```
 
 **Text body:**
 
 ```
-I was worried my local AI agent would go rogue. So I built Birkin—a governance layer for Hermes with three features that aren't available anywhere else:
+I was worried my local AI agent would go rogue. So I built Receiptd—a fail-closed gate for hooked AI agent tool calls, with a hash-chained audit log:
 
-1. Tamper-evident audit log — every action is hashed into a chain. If someone (including the agent) tries to cover its tracks, the hash chain catches it. Unlike append-only logs, an altered record fails verification.
+1. Tamper-evident audit log — each logged row is hashed into a chain. If someone (including the agent) tries to cover its tracks, the hash chain catches it. Unlike append-only logs, an altered record fails the hash-chain check.
 
-2. Tamper test — literally replace the audit.db file and run verify-chain.py. It detects the swap. Works in CI.
+2. Tamper test — replace the audit.db file and run verify-chain.py. It detects the swap. Works in CI.
 
-3. Pre-execution kill switch — intercept high-risk actions before they run. Telegram approval flows. Configurable timeout/deny policies.
+3. Pre-execution gate — hooked tool calls are checked before they run. Exit 2 blocks. A tool that is not hooked is not checked.
 
 It's open source, runs locally, and includes an iPhone PWA for emergency control from anywhere.
 
-The threat model is honest about what it doesn't prevent (root-level host compromise, prompt injection on the model itself). But for the things it does cover—proving what your agent did, detecting tampering, stopping it from deleting files—there's nothing like it.
+The threat model is honest about what it does not catch (root-level host compromise, a hook that never starts, prompt injection on the model itself). For the hooked calls it does see, you get a signed receipt and a hash chain you can check offline.
+
+Looking for feedback on the threat model, and I'm curious if people would find per-skill access rules or an external witness for the chain tip useful.
 
 Looking for feedback on the threat model, and I'm curious if people would find RBAC per skill or distributed Merkle-tree anchoring useful.
 
 Demo: 45-second asciinema showing governance check → tamper simulation → detection (static/tamper-demo.gif in the repo).
 ```
 
-**URL to submit:** `https://github.com/NickAiNYC/Birkin`
+**URL to submit:** `https://github.com/NickAltstein/receiptd`
 
 **HN tips:**
-- Reply to EVERY comment in the first 24 hours — HN ranks by engagement velocity
-- If asked "why not use X": answer is X doesn't have tamper detection / X isn't local-first / X requires trust in the provider
+- Reply to every comment in the opening 24 hours — HN ranks by engagement velocity
+- If asked "why not use X": answer is X doesn't have tamper detection / X does not run locally / X requires trust in the provider
 - If crypto confusion appears: "No tokens, no DAO, no blockchain — just agentic AI security tooling"
 
 Full draft: [`docs/social-media/show-hn-post.md`](docs/social-media/show-hn-post.md)
@@ -69,25 +71,25 @@ Giving an AI agent access to your files, APIs, and shell is terrifying.
 
 Hallucinations become destructive actions. A prompt injection can exfiltrate your secrets.
 
-So I built Birkin: a hash-chained audit log + kill switch for local AI agents.
+So I built Receiptd: a hash-chained audit log and a fail-closed gate for hooked AI agent tool calls.
 
-Open source. No tokens. Just provable safety. 🧵
+Open source. No tokens. A hash chain you can check. 🧵
 ```
 
 **Tweet 2 — Demo**
 ```
-Here's what it looks like when Birkin catches a tamper attempt:
+Here's what it looks like when Receiptd catches a tamper attempt:
 
 [GIF_LINK]
 
-Every row in the audit DB stores SHA-256(prev_hash || payload). Mutate one byte anywhere — even after bypassing database triggers — and verification fails.
+Every row in the audit DB stores SHA-256(prev_hash || payload). Mutate one byte anywhere — even after bypassing database triggers — and the hash-chain check fails.
 
-One command proves it: ./tests/tamper-test.sh
+Run ./tests/tamper-test.sh
 ```
 
 **Tweet 3 — The 5-Gate Governance Check**
 ```
-Birkin runs a 5-gate governance check against your agent:
+Receiptd runs a 5-gate governance check against your agent:
 
 1. Is the agent process running and responding?
 2. Is the audit chain intact? (no tampered rows)
@@ -97,27 +99,27 @@ Birkin runs a 5-gate governance check against your agent:
 
 Pure deterministic logic. No AI guessing about AI.
 
-./governance-check.sh → "BIRKIN GOVERNANCE INTACT"
+./governance-check.sh → "AGENT GOVERNANCE INTACT"
 ```
 
 **Tweet 4 — The Hard Problem**
 ```
 The weakest link: what if an attacker replaces the entire audit.db?
 
-verify-chain.py would verify the replacement chain as valid.
+verify-chain.py would accept the replacement chain.
 
-So Birkin posts the chain tip hash to Telegram hourly. Full DB replacement produces a new tip that doesn't match published history.
+So Receiptd posts the chain tip hash to Telegram hourly. Full DB replacement produces a new tip that doesn't match published history.
 
-Tampering becomes provable even after the fact.
+A replaced database then disagrees with the published tip.
 ```
 
 **Tweet 5 — CTA**
 ```
-Birkin is open source, MIT licensed, runs on Docker.
+Receiptd is open source, MIT licensed, runs on Docker.
 
-If you run a local AI agent (Hermes, anything OpenAI-compatible), Birkin wraps it without touching your install.
+If you run a local AI agent (Hermes, anything OpenAI-compatible), Receiptd wraps hooked tool calls without replacing the agent.
 
-GitHub: https://github.com/NickAiNYC/Birkin
+GitHub: https://github.com/NickAltstein/receiptd
 
 Looking for feedback on the threat model — especially attack vectors I missed.
 
@@ -143,11 +145,11 @@ I've been running a local AI agent (Hermes from Nous Research) to handle real ta
 
 That scared me. An agent that can do things can also do the wrong things.
 
-So I built Birkin — a governance layer that wraps any Hermes-compatible agent without modifying the agent itself.
+So I built Receiptd — a fail-closed gate for hooked tool calls that can sit in front of a Hermes-compatible agent without modifying the agent itself.
 
 **What it does:**
 
-- **Hash-chained SQLite audit log**: every action the agent takes is SHA-256 chained (SHA-256(prev_hash || payload)). Mutate any row — even after bypassing database triggers — and verify-chain.py catches it. CI-tested on every push.
+- **Hash-chained SQLite audit log**: each logged row is SHA-256 chained (SHA-256(prev_hash || payload)). Mutate any row — even after bypassing database triggers — and verify-chain.py catches it. CI-tested on every push.
 - **5-gate deterministic governance check**: process liveness, audit chain integrity, skill version pinning, behavioral drift against a signed baseline, health endpoint.
 - **Kill switches**: agent-stop.sh (graceful) and agent-lockdown.sh (network isolation). Both writes are themselves audit-logged.
 - **Drift detection**: 5 benchmark questions, bigram cosine similarity, threshold 0.85. Catches model swaps and config changes that shift behavior.
@@ -160,7 +162,7 @@ So I built Birkin — a governance layer that wraps any Hermes-compatible agent 
 
 The DB replacement attack is the one I'm most worried about. The roadmap item is posting the chain tip hash to Telegram hourly — so a full replacement produces a tip that doesn't match published history.
 
-**GitHub**: https://github.com/NickAiNYC/Birkin
+**GitHub**: https://github.com/NickAltstein/receiptd
 
 **Not crypto**: I'm aware there's a "Hermes" crypto project. This is completely unrelated — no tokens, no DAO, no blockchain. Just agentic AI security tooling.
 
@@ -170,7 +172,7 @@ What I'm genuinely looking for:
 
 1. Attack vectors I haven't thought of in the threat model
 2. Opinions on the drift detection approach (bigram cosine vs. embedding similarity)
-3. Anyone who's tried to solve the "prove your agent didn't do something bad" problem differently
+3. Anyone who's tried to check what an agent did, instead of asking the model to report on itself
 
 Happy to discuss the architecture in comments.
 ```
@@ -198,7 +200,7 @@ Cross-post canonical URL from your GitHub Pages or personal blog if you have one
 
 ## Posting Order
 
-1. **Tuesday or Wednesday, 9am Eastern** — Submit Show HN first
+1. **Tuesday or Wednesday, 9am Eastern** — Submit the Show HN post before the other posts
 2. **Within 1 hour of Show HN** — Post Twitter thread (link to GitHub, not HN post)
 3. **Same day, afternoon** — Post r/LocalLLaMA
 4. **Same day, evening** — Post r/MachineLearning
