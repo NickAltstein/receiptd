@@ -301,7 +301,41 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     return blocked, score, triggered
 
 
+def coerce_hook_status(code: object) -> int:
+    """Return 0 or 2. Claude Code blocks a tool call only on exit 2."""
+    if code == 0:
+        return 0
+    if code == 2:
+        return 2
+    sys.stderr.write(
+        f"[RECEIPTD FAIL-CLOSED] Hook status {code!r} is not 0 or 2; exiting 2.\n"
+    )
+    return 2
+
+
+def hook_status_from_exception(exc: BaseException) -> int:
+    """Map an escaped exception to a hook status. Exit 1 must not leak out."""
+    if isinstance(exc, SystemExit):
+        code = exc.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return coerce_hook_status(code)
+        sys.stderr.write(f"[RECEIPTD FAIL-CLOSED EXCEPTION] Execution halted: {code}\n")
+        return 2
+    sys.stderr.write(f"[RECEIPTD FAIL-CLOSED EXCEPTION] Execution halted: {exc}\n")
+    return 2
+
+
 def main() -> int:
+    """Run the gate. Any error becomes exit status 2, never 1."""
+    try:
+        return coerce_hook_status(_main_guarded())
+    except BaseException as exc:
+        return hook_status_from_exception(exc)
+
+
+def _main_guarded() -> int:
     deadline_ms = resolve_deadline_ms()
     _CTX.clear()
     _CTX["finished"] = False
