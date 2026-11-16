@@ -2,7 +2,7 @@
 
 ## [1.1.0] - 2026-11-16
 
-Package version 1.1.0 matches git tag `v1.1`. `receiptd version` and `pyproject.toml` both report 1.1.0. This entry does not create a tag or a GitHub release.
+Package version 1.1.0 matches git tag `v1.1`. `receiptd version`, `pyproject.toml`, and `health/health_endpoint.py` report 1.1.0. This entry does not create a tag or a GitHub release.
 
 ### Changed
 - `receiptd init` writes new ledgers at `.receiptd/receipts.jsonl`. If that file is absent and `.birkin/receipts.jsonl` already exists, init keeps appending to the old file.

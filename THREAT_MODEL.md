@@ -10,7 +10,7 @@ The Ed25519 signing key sits on the same host as the agent, in `~/.receiptd/rece
 
 PreToolUse rules are regular expressions over the tool name plus canonical JSON (sorted keys) of the arguments. A command that hides a pattern such as `.env`, `curl`, or `rm -rf` (encoding, a renamed binary, or a split the regex does not see) is not denied by that rule.
 
-If the hook process cannot start at all, Claude Code does not block the tool call. Claude Code blocks only on exit code 2. `receiptd init` writes the absolute path of the interpreter that can import receiptd, ends the command with `|| exit 2`, sets `onFailure` to `block` for Claude Code versions that honor it, and refuses to report success unless that interpreter exits 2 on a known-bad tool call and appends a deny receipt. A Claude Code build that ignores `onFailure` and never starts the hook process still does not block.
+If the hook process cannot start at all, Claude Code does not block the tool call. Claude Code blocks only on exit code 2. `receiptd init` writes the absolute path of the interpreter that can import receiptd, ends the command with `|| exit 2`, and refuses to report success unless that interpreter exits 2 on a known-bad tool call and appends a deny receipt. Init also writes `onFailure: block`. Claude Code's own docs say not to rely on that field, so a process that never starts can still let the call through.
 
 ---
 

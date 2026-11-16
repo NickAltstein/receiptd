@@ -269,8 +269,8 @@ def init(
                     "type": "command",
                     "command": gate_command,
                     "timeout": HOOK_TIMEOUT_SECONDS,
-                    # Claude Code v2.1.295+ blocks when the process cannot start
-                    # or times out. Older builds ignore this field.
+                    # Present since Claude Code v2.1.295. Anthropic's docs say
+                    # not to rely on it, so init still probes the interpreter.
                     "onFailure": "block",
                 }
             ],
