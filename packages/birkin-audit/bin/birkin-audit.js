@@ -117,7 +117,7 @@ function main() {
 
   if (configs.length === 0) {
     console.log(`${ANSI.yellow}[i] No mcp.json or .claude/settings.json found in current directory.${ANSI.reset}`);
-    console.log(`\nTo initialize Birkin fail-closed governance hooks in this repo:`);
+    console.log(`\nTo initialize Birkin fail-closed governance hooks for hooked tools (Bash, Write, Edit, MultiEdit, mcp__.*) in this repo:`);
     console.log(`  ${ANSI.bold}pip install birkin && birkin init --claude-code${ANSI.reset}`);
     console.log(`\nOr test adversarial vectors in the live simulator:`);
     console.log(`  ${ANSI.cyan}https://sandbox.auditgpt.ai/?scenario=prod-drop-table&step=1${ANSI.reset}\n`);
@@ -172,7 +172,7 @@ function main() {
     console.log(`${ANSI.green}${ANSI.bold}[✓] BIRKIN PRE-TOOL HOOK ACTIVE${ANSI.reset} — Fail-closed exit code 2 enforced.`);
   } else {
     console.log(`${ANSI.red}${ANSI.bold}[!] BIRKIN HOOK MISSING${ANSI.reset} — Agent tool calls currently run un-gated!`);
-    console.log(`Run ${ANSI.bold}pip install birkin && birkin init --claude-code${ANSI.reset} to wire fail-closed protection.`);
+    console.log(`Run ${ANSI.bold}pip install birkin && birkin init --claude-code${ANSI.reset} to wire fail-closed protection for hooked tools (Bash, Write, Edit, MultiEdit, mcp__.*).`);
   }
   console.log(`${"=".repeat(65)}\n`);
 }

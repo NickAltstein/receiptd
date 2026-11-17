@@ -4,7 +4,7 @@ Always explore + plan before editing.
 
 ## What this repo is
 
-Receiptd is an MIT-licensed, fail-closed authorization gate for AI agent tool calls.
+Receiptd is an MIT-licensed, fail-closed authorization gate for hooked AI agent tool calls (`Bash`, `Write`, `Edit`, `MultiEdit`, `mcp__.*`).
 
 * `receiptd/hooks/claude_code_gate.py`: Claude Code PreToolUse hook. Reads JSON on stdin, applies policy plus a blast-radius score, exits 2 to block.
 * `receiptd/hooks/claude_code_stop_gate.py`: Stop hook. Blocks "done" until tests pass; honors `stop_hook_active` with a retry cap and a `gave_up` receipt.
