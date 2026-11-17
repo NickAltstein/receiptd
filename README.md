@@ -19,7 +19,7 @@ The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, an
 
 LLM judge prompts are probabilistic and add a model call to each decision. Receiptd uses fixed rules instead. The Stop hook blocks a completion while tests fail, and gives up after 3 retries with a signed `gave_up` receipt. Every hooked tool call emits an Ed25519-signed receipt you can check offline.
 
-**See it in 20 seconds:** Run [the terminal clip](demos/clip.sh) to watch the same ledger pass its integrity checks and fail after one byte changes.
+**See it in 20 seconds:** Run [the terminal clip](demos/clip.sh) to watch the same ledger pass its integrity checks and fail after one byte changes. See the [v1.2 scoring plan](https://github.com/NickAltstein/receiptd/blob/501b528/docs/eval/v1.2-scoring-plan.md).
 
 ## Quickstart
 
