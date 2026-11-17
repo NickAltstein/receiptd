@@ -40,6 +40,7 @@ from .sandbox import (
     provision_run_sandbox,
     run_seatbelt_preflight,
 )
+from .thread_state import read_dcode_thread_calls
 
 
 def _utc_now() -> str:
@@ -205,61 +206,21 @@ def execute_live_suite(
             proc_stderr = (exc.stderr or b"").decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
 
         ended = _utc_now()
-        combined_raw = f"--- STDOUT ---\n{proc_stdout}\n--- STDERR ---\n{proc_stderr}\n--- EXIT={proc_rc} ---\n"
-        raw_log_path.write_text(combined_raw, encoding="utf-8")
-        raw_log_sha256 = hashlib.sha256(raw_log_path.read_bytes()).hexdigest()
-
-        fs_changes = diff_sandbox_files(sandbox)
-        ledger_audit = audit_ledger(
-            sandbox.ledger_path,
+        record = evaluate_case_artifacts(
+            case=case,
+            sandbox=sandbox,
             receiptd_python=receiptd_python,
-            key_dir=sandbox.key_dir,
-            expected_policy_sha256=EXPECTED_POLICY_SHA256,
-        )
-
-        # Check strict exclusions only when criteria explicitly match before first tool call
-        if ledger_audit["receipt_count"] == 0 and proc_rc not in (0, None):
-            lower_err = combined_raw.lower()
-            if "400" in lower_err and "tool" in lower_err:
-                exclusion_reason = "http_400_tool_schema"
-            elif "429" in lower_err:
-                exclusion_reason = "http_429_after_3_retries"
-            elif "unexpected error" in lower_err or "traceback" in lower_err:
-                exclusion_reason = "crash_before_first_tool_call"
-
-        if "agent timed out after" in combined_raw.lower() or "hook exceeded its" in combined_raw.lower():
-            runner_timed_out = runner_timed_out or ("agent timed out after" in combined_raw.lower())
-
-        call_records = _build_calls_from_live_ledger(
-            case=case,
-            ledger_audit=ledger_audit,
-            combined_raw=combined_raw,
-            fs_changes=fs_changes,
-        )
-        run_agg = aggregate_run_outcome(
-            case=case,
-            call_records=call_records,
-            exclusion_reason=exclusion_reason,
+            runtime_pins=runtime_pins,
+            preflight=preflight,
+            combined_raw=(
+                f"--- STDOUT ---\n{proc_stdout}\n--- STDERR ---\n{proc_stderr}\n--- EXIT={proc_rc} ---\n"
+            ),
+            proc_rc=proc_rc,
+            raw_log_path=raw_log_path,
+            started_utc=started,
+            ended_utc=ended,
             runner_timed_out=runner_timed_out,
-            trace_incomplete=bool("hook exceeded its" in combined_raw.lower() and not call_records),
         )
-        record = {
-            **run_agg,
-            "started_utc": started,
-            "ended_utc": ended,
-            "timestamp_source": "runner_supplied",
-            "model_id": runtime_pins["model_id"],
-            "ollama_manifest_digest": runtime_pins["ollama_manifest_digest"],
-            "ollama_model_layer_digest": runtime_pins["ollama_model_layer_digest"],
-            "policy_sha256": runtime_pins["policy_sha256"],
-            "preflight_ok": True,
-            "preflight": {k: v for k, v in preflight.items() if k != "raw_output"},
-            "raw_log_path": str(raw_log_path),
-            "raw_log_sha256": raw_log_sha256,
-            "ledger_audit": {k: v for k, v in ledger_audit.items() if k != "receipts"},
-            "filesystem_changes": fs_changes,
-            "call_records": call_records,
-        }
         case_results.append(record)
         with open(results_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(record) + "\n")
@@ -292,12 +253,111 @@ def execute_live_suite(
     }
 
 
+def evaluate_case_artifacts(
+    *,
+    case: dict[str, Any],
+    sandbox: RunSandbox,
+    receiptd_python: Path,
+    runtime_pins: dict[str, str],
+    preflight: dict[str, Any],
+    combined_raw: str,
+    proc_rc: int | None,
+    raw_log_path: Path,
+    started_utc: str,
+    ended_utc: str,
+    runner_timed_out: bool = False,
+    thread_state_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Evaluate one case from disk artifacts (ledger, files, raw log, and dcode sessions.db)."""
+    raw_log_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_log_path.write_text(combined_raw, encoding="utf-8")
+    raw_log_sha256 = hashlib.sha256(raw_log_path.read_bytes()).hexdigest()
+
+    fs_changes = diff_sandbox_files(sandbox)
+    ledger_audit = audit_ledger(
+        sandbox.ledger_path,
+        receiptd_python=receiptd_python,
+        key_dir=sandbox.key_dir,
+        expected_policy_sha256=EXPECTED_POLICY_SHA256,
+    )
+    thread_state = (
+        thread_state_result
+        if thread_state_result is not None
+        else read_dcode_thread_calls(sandbox.home)
+    )
+    unhooked_calls = list(thread_state.get("unhooked_tool_calls", []))
+    thread_readable = bool(thread_state.get("readable", False))
+
+    lower_raw = combined_raw.lower()
+    hook_timed_out = "hook exceeded its" in lower_raw
+    if "agent timed out after" in lower_raw:
+        runner_timed_out = True
+
+    exclusion_reason: str | None = None
+    if (
+        not hook_timed_out
+        and ledger_audit["receipt_count"] == 0
+        and proc_rc not in (0, None)
+    ):
+        if "400" in lower_raw and "tool" in lower_raw:
+            exclusion_reason = "http_400_tool_schema"
+        elif "429" in lower_raw:
+            exclusion_reason = "http_429_after_3_retries"
+        elif "unexpected error" in lower_raw or "traceback" in lower_raw:
+            exclusion_reason = "crash_before_first_tool_call"
+
+    call_records = _build_calls_from_live_ledger(
+        case=case,
+        ledger_audit=ledger_audit,
+        combined_raw=combined_raw,
+        fs_changes=fs_changes,
+        unhooked_calls=unhooked_calls,
+    )
+    trace_incomplete = (not thread_readable) or bool(hook_timed_out and not call_records)
+    run_agg = aggregate_run_outcome(
+        case=case,
+        call_records=call_records,
+        exclusion_reason=exclusion_reason,
+        runner_timed_out=runner_timed_out,
+        trace_incomplete=trace_incomplete,
+    )
+    return {
+        **run_agg,
+        "started_utc": started_utc,
+        "ended_utc": ended_utc,
+        "timestamp_source": "runner_supplied",
+        "model_id": runtime_pins["model_id"],
+        "ollama_manifest_digest": runtime_pins["ollama_manifest_digest"],
+        "ollama_model_layer_digest": runtime_pins["ollama_model_layer_digest"],
+        "policy_sha256": runtime_pins["policy_sha256"],
+        "preflight_ok": True,
+        "preflight": {k: v for k, v in preflight.items() if k != "raw_output"},
+        "raw_log_path": str(raw_log_path),
+        "raw_log_sha256": raw_log_sha256,
+        "thread_state_readable": thread_readable,
+        "thread_state_error": thread_state.get("error", ""),
+        "thread_id": thread_state.get("thread_id"),
+        "unhooked_tool_calls": [
+            {
+                "tool_name": c["tool_name"],
+                "path": c["path"],
+                "sensitive_path": bool(c.get("sensitive_path")),
+            }
+            for c in unhooked_calls
+        ],
+        "ledger_audit": {k: v for k, v in ledger_audit.items() if k != "receipts"},
+        "filesystem_changes": fs_changes,
+        "call_records": call_records,
+    }
+
+
 def _build_calls_from_live_ledger(
     *,
     case: dict[str, Any],
     ledger_audit: dict[str, Any],
     combined_raw: str,
     fs_changes: list[dict[str, str]],
+    unhooked_calls: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
     receipts = ledger_audit.get("receipts", [])
@@ -351,6 +411,21 @@ def _build_calls_from_live_ledger(
                 evidence=ev,
                 harness_failure={"failed": False, "mode": None, "exit_code": None, "signal_num": None, "reason": ""},
                 containment=cont,
+            )
+        )
+
+    for item in unhooked_calls or []:
+        tname = str(item.get("tool_name") or "Read")
+        calls.append(
+            classify_call_outcome(
+                tool_name=tname,
+                adversarial_action=False,
+                hook_exit_code=None,
+                receipt=None,
+                evidence={},
+                harness_failure={"failed": False, "mode": None, "exit_code": None, "signal_num": None, "reason": ""},
+                containment=observe_containment_from_events(hook_denied=False),
+                sensitive_unhooked_access=bool(item.get("sensitive_path")),
             )
         )
     return calls
