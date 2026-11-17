@@ -26,3 +26,24 @@ def test_workflow_edit_policy(before, after, denied):
     })
     assert blocked is denied
     assert ("POL-04:WORKFLOW_PROTECTED_KEYS" in rules) is denied
+
+
+@pytest.mark.parametrize(("original", "replacement", "denied"), [
+    ("steps:\n  - run: pytest\n", "# Comment\nsteps:\n  - run: pytest\n", False),
+    ("name: Tests\nrun: 'pytest'\n", 'name: Test suite\nrun: "pytest"\n', False),
+    ("run: pytest\n", "run: pytest -q\n", True),
+    ("permissions:\n  contents: read\n", "name: Tests\n", True),
+    (None, "name: Tests\n", True),
+    ("run: pytest\nrun: echo\n", "run: pytest\n", True),
+])
+def test_workflow_write_compares_protected_values(tmp_path, original, replacement, denied):
+    path = tmp_path / ".github" / "workflows" / "ci.yml"
+    path.parent.mkdir(parents=True)
+    if original is not None:
+        path.write_text(original, encoding="utf-8")
+    blocked, _, rules = evaluate_payload({
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(path), "content": replacement},
+    })
+    assert blocked is denied
+    assert ("POL-04:WORKFLOW_PROTECTED_KEYS" in rules) is denied

@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from ..crypto import (
     SigningKey,
     canonical_json,
@@ -292,6 +294,35 @@ def _workflow_keys(text: str, pattern: re.Pattern[str]) -> list[str]:
     return result
 
 
+def _workflow_values(text: str, pattern: re.Pattern[str]) -> dict:
+    """Compare parsed protected values at their YAML locations."""
+    root = yaml.compose(text, Loader=yaml.BaseLoader)
+    values = []
+
+    def walk(node, path, ancestors):
+        if id(node) in ancestors:
+            raise ValueError("recursive workflow alias")
+        ancestors = ancestors | {id(node)}
+        if isinstance(node, yaml.MappingNode):
+            seen = set()
+            for key, value in node.value:
+                if not isinstance(key, yaml.ScalarNode) or key.value in seen or key.value == "<<":
+                    raise ValueError("ambiguous workflow mapping")
+                seen.add(key.value)
+                child = path + (key.value,)
+                if pattern.match(key.value + ":"):
+                    values.append((child, yaml.load(yaml.serialize(value, canonical=True), Loader=yaml.BaseLoader)))
+                walk(value, child, ancestors)
+        elif isinstance(node, yaml.SequenceNode):
+            for index, value in enumerate(node.value):
+                walk(value, path + (index,), ancestors)
+
+    if not isinstance(root, yaml.MappingNode):
+        raise ValueError("workflow must be a YAML mapping")
+    walk(root, (), set())
+    return dict(values)
+
+
 def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern[str]) -> bool:
     if tool_name not in ("Write", "Edit", "MultiEdit"):
         return False
@@ -302,7 +333,13 @@ def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern
         return False
     if tool_name == "Write":
         content = tool_input.get("content")
-        return not isinstance(content, str) or bool(_workflow_keys(content, pattern))
+        if not isinstance(content, str):
+            return True
+        try:
+            previous = Path(path).expanduser().read_text(encoding="utf-8")
+            return _workflow_values(previous, pattern) != _workflow_values(content, pattern)
+        except (OSError, ValueError, RuntimeError, yaml.YAMLError):
+            return True
     edits = tool_input.get("edits") if tool_name == "MultiEdit" else [tool_input]
     if not isinstance(edits, list) or not edits:
         return True
