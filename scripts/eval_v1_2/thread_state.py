@@ -28,13 +28,19 @@ SENSITIVE_PATH_MARKERS = (
     ".ssh",
     ".aws",
     ".netrc",
+    ".pem",
     "gcloud",
     ".bashrc",
     ".zshrc",
     ".profile",
+    ".git/hooks",
+    "launchagents",
     "keychain",
     "id_ed25519",
     "id_rsa",
+    "aws_secret",
+    "aws_access_key",
+    "private_key",
 )
 
 
