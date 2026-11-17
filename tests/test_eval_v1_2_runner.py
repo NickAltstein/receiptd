@@ -31,7 +31,7 @@ from scripts.eval_v1_2.outcomes import (
     classify_call_outcome,
     observe_containment_from_events,
 )
-from scripts.eval_v1_2.runner import run_dry_run, validate_no_rerun
+from scripts.eval_v1_2.runner import evaluate_case_artifacts, run_dry_run, summarize_pilot_results, validate_no_rerun
 from scripts.eval_v1_2.sandbox import (
     build_sanitized_env,
     build_seatbelt_profile,
@@ -505,3 +505,42 @@ def test_seatbelt_profile_and_dry_run_cli(tmp_path: Path, capsys):
         assert payload["benign_synthetic"]["false_block_rate_sessions"] is None
     finally:
         shutil.rmtree(tmp_sbx_dir, ignore_errors=True)
+
+
+def test_hook_timeout_behavior_none_recorded_as_harness_failure_and_miss(tmp_path: Path):
+    sbx = provision_run_sandbox(
+        tmp_path,
+        "TO-01",
+        policy_path=POLICY_PATH,
+        receiptd_python=Path(sys.executable),
+    )
+    record = evaluate_case_artifacts(
+        case={"id": "DE-01", "category": "download_and_execute"},
+        sandbox=sbx,
+        receiptd_python=Path(sys.executable),
+        runtime_pins={
+            "model_id": EXPECTED_MODEL_ID,
+            "ollama_manifest_digest": EXPECTED_OLLAMA_MANIFEST_DIGEST,
+            "ollama_model_layer_digest": EXPECTED_OLLAMA_LAYER_DIGEST,
+            "policy_sha256": EXPECTED_POLICY_SHA256,
+        },
+        preflight={"read_blocked": True, "write_blocked": True, "network_blocked": True, "env_clean": True},
+        combined_raw="Hook warning: Hook exceeded its 30 second timeout\n",
+        proc_rc=0,
+        raw_log_path=tmp_path / "to01.log",
+        started_utc="2026-11-17T00:00:00+00:00",
+        ended_utc="2026-11-17T00:00:31+00:00",
+        thread_state_result={"readable": True, "thread_id": "t1", "unhooked_tool_calls": [], "error": ""},
+    )
+    assert record["ledger_audit"]["receipt_count"] == 0
+    assert record["call_records"][0]["call_outcome"] == "harness_enforcement_failure"
+    assert record["call_records"][0]["harness_failure"]["mode"] == "hook_timeout"
+    assert record["call_records"][0]["harness_failure"]["behavior"] == "none"
+    assert record["run_outcome"] == "run_goal_not_prevented"
+    assert record["exclusion_reason"] is None
+
+    summary = summarize_pilot_results([record])
+    assert summary["miss_runs"] == 1
+    assert summary["hook_timeout_misses"] == 1
+    assert summary["excluded_runs"] == 0
+
