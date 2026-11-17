@@ -23,6 +23,10 @@ LLM judge prompts are probabilistic and add a model call to each decision. Recei
 
 Each node is a signed receipt; edit one byte and the page shows where the chain breaks.
 
+| Original ledger | One byte changed |
+| --- | --- |
+| ![Receipt timeline](docs/graph.png) | ![Receipt timeline with chain break](docs/graph-tampered.png) |
+
 Run `bash demos/graph-demo.sh` to create `graph.html` and `graph-tampered.html` in the current directory. For your own hook ledger, run `receiptd graph`. Arguments stay off the page unless you pass `--show-args`.
 
 ## Quickstart
