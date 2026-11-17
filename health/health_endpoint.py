@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================================
 # health_endpoint.py — Birkin Health Endpoint
-# Version: 1.1.1 | Port: 9999 | Returns JSON governance status
+# Version: 1.2.0 | Port: 9999 | Returns JSON governance status
 # =============================================================================
 import os
 import sys
@@ -108,7 +108,7 @@ def health():
         "audit_log_entries": get_audit_log_entries(),
         "drift_check_last_run": get_drift_check_info()["last_run"],
         "drift_check_status": get_drift_check_info()["status"],
-        "version": "1.1.1",
+        "version": "1.2.0",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

@@ -1,17 +1,14 @@
 # Changelog
 
-## Unreleased
+## [1.2.0] - 2026-11-17
 
-- PyPI project page links to the GitHub repository, issues, and changelog.
-
-## [1.2.0] - Unreleased
-
-- Deny shell strings that write to startup or hook paths or enable a user service.
-- Require both a credential-read and a network indicator for the Bash credential rule.
-- Deny shell strings that match remote shell indicators.
-- Deny shell commands that feed downloaded or decoded content to an interpreter.
+- Default PreToolUse policy denies download-and-execute commands, remote shell indicators, credential reads paired with egress, and writes to persistence paths.
 - Check visible workflow edits and compare whole-file changes to workflow controls.
 - Deny structured writes and edits on shell startup, Git hook, and service registration paths.
+- Render hook receipts as an offline graph (`receiptd graph`).
+- Add ledger tamper demo clip.
+- Record v1.2 scoring plan with attack evaluation set addendum.
+- PyPI project page links to the GitHub repository, issues, and changelog.
 
 ## [1.1.1]
 

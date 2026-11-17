@@ -33,7 +33,7 @@ Run `bash demos/graph-demo.sh` to create `graph.html` and `graph-tampered.html` 
 
 ## Quickstart
 
-Source version: 1.1.1.
+Source version: 1.2.0.
 
 ```bash
 pip install receiptd
