@@ -125,7 +125,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path"):
+        if scope not in ("payload", "workflow_edit", "write_path", "shell_command"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -373,6 +373,7 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     tool_name = tool_name.strip()
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
 
+    command = tool_input.get("command") if tool_name == "Bash" else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
@@ -385,6 +386,8 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
                 and isinstance(path, str)
                 and bool(rule.pattern.search(os.path.normpath(path)))
             )
+        elif rule.scope == "shell_command":
+            matched = isinstance(command, str) and bool(rule.pattern.search(command))
         else:
             matched = bool(rule.pattern.search(combined))
         if matched:
