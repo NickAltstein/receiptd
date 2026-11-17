@@ -6,6 +6,7 @@
 
 ## [1.2.0] - Unreleased
 
+- Deny shell strings that match remote shell indicators.
 - Deny shell commands that feed downloaded or decoded content to an interpreter.
 - Check visible workflow edits and compare whole-file changes to workflow controls.
 - Deny structured writes and edits on shell startup, Git hook, and service registration paths.
