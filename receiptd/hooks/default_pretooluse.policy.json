@@ -8,7 +8,8 @@
       "id": "POL-01:ENV_EXFILTRATION",
       "weight": 95,
       "ignore_case": true,
-      "pattern": "(\\.env|\\.aws/credentials|\\.ssh/id_[a-zA-Z0-9_-]+|id_rsa|id_ed25519|AWS_SECRET|AWS_ACCESS_KEY|PRIVATE_KEY|curl\\s+.*(-d|-F|-T|--data|--upload-file)|wget\\s+.*(--post-data|--post-file))"
+      "pattern": "(?s)\\A(?=.*(?:\\b(?:cat|tar|head|tail|sed|awk|grep|scp|rsync)\\s+[^\\n;&|]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|@[^\\s\"\\x27]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|(?:-T|--upload-file)(?:\\s+|=)[\"\\x27]?[^\\s\"\\x27]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|\\bopen\\(\\s*\\\\?[\"\\x27][^\\n]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|\\benv\\s*(?=\\|)|\\bprintenv\\s*(?=\\|)))(?=.*(?:\\bcurl(?=\\s)[^\\n;&|]*?(?:\\s(?:-d|-F|-T|--data(?:-binary|-raw|-urlencode)?|--form|--upload-file)(?=[\\s=]|$))|\\bwget(?=\\s)[^\\n;&|]*?\\s--(?:post|body)-(?:data|file)(?=[\\s=]|$)|\\b(?:nc|ncat|netcat)\\b(?![^\\n;&|]*\\s-z\\b)\\s+|\\b(?:scp|rsync)\\s+[^\\n]*?(?:[\\w.-]+@)?[\\w.-]+:|\\brequests\\s*\\.\\s*(?:post|put|patch)\\s*\\())",
+      "scope": "shell_command"
     },
     {
       "id": "POL-02:DESTRUCTIVE_DDL_OR_FS",
