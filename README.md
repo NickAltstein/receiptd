@@ -19,6 +19,8 @@ The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, an
 
 LLM judge prompts are probabilistic and add a model call to each decision. Receiptd uses fixed rules instead. The Stop hook blocks a completion while tests fail, and gives up after 3 retries with a signed `gave_up` receipt. Every hooked tool call emits an Ed25519-signed receipt you can check offline.
 
+**See it in 20 seconds:** Watch [the terminal recording](demos/clip.cast) or run [the clip locally](demos/clip.sh) to watch the same ledger pass its integrity checks and fail after one byte changes. See the [v1.2 scoring plan](https://github.com/NickAltstein/receiptd/blob/501b528/docs/eval/v1.2-scoring-plan.md).
+
 ## See a session
 
 Each node is a signed receipt; edit one byte and the page shows where the chain breaks.
@@ -44,9 +46,18 @@ receiptd verify-card card.json
 
 ---
 
+## What this does not protect against
+
+- Tools outside the configured matcher, including `Read`, and activity such as prompts and approvals that does not reach PreToolUse.
+- Obfuscation and command behavior the policy rules cannot observe.
+- Workflow checking compares protected keys visible in edit snippets. Comment-only and descriptive edits can pass. Whole-file workflow writes compare protected YAML values against the current file. The rule denies when the current file cannot be read or the comparison cannot be made. New workflow files are intentionally denied because there is no current file to compare. To allow them for a repository, copy the default policy to a repo-local JSON file, remove `POL-04:WORKFLOW_PROTECTED_KEYS`, and run `receiptd init --claude-code --policy-path path/to/policy.json` in that repository. This disables the workflow-key rule for that repository.
+- Tool calls outside Claude Code's installed hook path.
+
 ## Trifecta Card
 
-**One line:** `receiptd card` reads your Claude Code / Codex session logs offline, classifies tool calls that are present with fixed rules, and answers one question — *did this session hit the lethal trifecta of private data + untrusted input + egress?* — as a colored terminal verdict, a shareable `card.png` / `card.svg`, and a signed `card.json` you can check later with `receiptd verify-card`.
+`receiptd card` classifies tool calls from Claude Code and Codex session transcripts after the fact. It exports a RED or GREEN Trifecta card and a signed `card.json` you can check with `receiptd verify-card`. Gate decisions are recorded separately in the receipt ledger.
+
+**RED example:** The transcript matched these rules for private data, untrusted input, and egress.
 
 ![Example Trifecta Card (RED)](docs/trifecta_example.png)
 
