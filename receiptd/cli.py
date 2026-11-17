@@ -401,24 +401,31 @@ def _verify_ledger_file(
     pubkey: Optional[str] = None,
     allow_unanchored: bool = False,
     key_dir: Optional[Path] = None,
+    *,
+    snapshot: Optional[str] = None,
+    failure: Optional[list[int]] = None,
 ) -> bool:
-    if not ledger_path.exists():
+    if snapshot is None and not ledger_path.exists():
         typer.echo(f"Error: Ledger file not found at {ledger_path}", err=True)
         return False
 
     typer.echo(f"Auditing cryptographic ledger: {ledger_path}...\n")
 
     entries = []
-    with open(ledger_path, "r", encoding="utf-8") as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(json.loads(line))
-            except Exception as e:
-                typer.echo(f"[-] Malformed JSON on line {line_num}: {e}", err=True)
-                return False
+    source = ledger_path.read_text(encoding="utf-8") if snapshot is None else snapshot
+    for line_num, line in enumerate(source.split("\n"), 1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            if not isinstance(entry, dict):
+                raise ValueError("ledger record must be an object")
+            entries.append(entry)
+        except (ValueError, TypeError) as e:
+            if failure is not None:
+                failure.append(sum(item.get("type") != "checkpoint" for item in entries) + 1)
+            typer.echo(f"[-] Malformed JSON on line {line_num}: {e}", err=True)
+            return False
 
     if not entries:
         if not allow_unanchored:
@@ -476,6 +483,7 @@ def _verify_ledger_file(
     tamper_reason = ""
 
     for idx, entry in enumerate(entries):
+        failing_index = receipt_count + 1
         is_checkpoint = (entry.get("type") == "checkpoint")
 
         if is_checkpoint:
@@ -606,6 +614,7 @@ def _verify_ledger_file(
         typer.echo()
 
     if not tamper_detected and not allow_unanchored:
+        failing_index = None
         kd = key_dir or Path(os.environ.get("RECEIPTD_KEY_DIR", Path.home() / ".receiptd"))
         state_file = kd / "ledger_state.json"
         if not state_file.exists():
@@ -690,6 +699,8 @@ def _verify_ledger_file(
                                         )
 
     if tamper_detected:
+        if failure is not None and failing_index is not None:
+            failure.append(failing_index)
         typer.echo("=" * 65)
         typer.echo(f"✗ TAMPER DETECTED: {tamper_reason}")
         typer.echo("=" * 65)
@@ -759,6 +770,35 @@ def anchor(
         typer.echo(f"error: could not write anchor: {exc}", err=True)
         raise typer.Exit(code=2)
     typer.echo(f"Anchored {ledger_path.resolve()} at sequence #{seq}")
+
+
+@app.command("graph")
+def graph(
+    ledger: Optional[Path] = typer.Option(None, "--ledger"),
+    out: Path = typer.Option(Path("graph.html"), "--out"),
+    show_args: bool = typer.Option(False, "--show-args"),
+) -> None:
+    """Render an offline receipt timeline."""
+    from contextlib import redirect_stderr, redirect_stdout
+    from io import StringIO
+
+    from .graph import render_graph
+
+    ledger = ledger if ledger is not None else Path(choose_ledger_path())
+    try:
+        if out.resolve() == ledger.resolve() or (out.exists() and out.samefile(ledger)):
+            raise ValueError("output must differ from the input ledger")
+        snapshot = ledger.read_text(encoding="utf-8")
+        failure: list[int] = []
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            passed = _verify_ledger_file(ledger, snapshot=snapshot, failure=failure)
+        out.write_text(render_graph(snapshot, passed, failure[0] if failure else None, show_args), encoding="utf-8")
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        typer.echo(f"error: could not render receipt graph ({type(exc).__name__})", err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"Wrote {out}")
+    if not passed:
+        raise typer.Exit(code=2)
 
 
 @app.command("verify")

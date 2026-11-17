@@ -19,6 +19,12 @@ The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, an
 
 LLM judge prompts are probabilistic and add a model call to each decision. Receiptd uses fixed rules instead. The Stop hook blocks a completion while tests fail, and gives up after 3 retries with a signed `gave_up` receipt. Every hooked tool call emits an Ed25519-signed receipt you can check offline.
 
+## See a session
+
+Each node is a signed receipt; edit one byte and the page shows where the chain breaks.
+
+Run `bash demos/graph-demo.sh` to create `graph.html` and `graph-tampered.html` in the current directory. For your own hook ledger, run `receiptd graph`. Arguments stay off the page unless you pass `--show-args`.
+
 ## Quickstart
 
 Source version: 1.1.1.
