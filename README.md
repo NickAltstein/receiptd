@@ -21,6 +21,8 @@ LLM judge prompts are probabilistic and add a model call to each decision. Recei
 
 ## Quickstart
 
+Source version: 1.1.1.
+
 ```bash
 pip install receiptd
 receiptd init --claude-code
