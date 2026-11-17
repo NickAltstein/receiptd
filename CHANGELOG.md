@@ -4,6 +4,11 @@
 
 - PyPI project page links to the GitHub repository, issues, and changelog.
 
+## [1.2.0] - Unreleased
+
+- Check visible workflow edits and compare whole-file changes to workflow controls.
+- Deny structured writes and edits on shell startup, Git hook, and service registration paths.
+
 ## [1.1.1]
 
 - Align the CLI, package, and health endpoint version at 1.1.1.

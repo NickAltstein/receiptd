@@ -28,6 +28,13 @@
       "ignore_case": false,
       "pattern": "^(?:-\\s+)?(?:run|uses|permissions|'run'|'uses'|'permissions'|\\\"run\\\"|\\\"uses\\\"|\\\"permissions\\\")\\s*:",
       "scope": "workflow_edit"
+    },
+    {
+      "id": "POL-05:PERSISTENCE_PATH",
+      "weight": 85,
+      "ignore_case": false,
+      "scope": "write_path",
+      "pattern": "(?:^|/)(?:\\.bashrc|\\.zshrc|\\.profile)$|(?:^|/)\\.git/hooks/[^/]+$|(?:^|/)(?:Library/Launch(?:Agents|Daemons)|etc/(?:systemd/system|cron\\.d)|\\.config/systemd/user)/[^/]+$|^/etc/crontab$"
     }
   ]
 }
