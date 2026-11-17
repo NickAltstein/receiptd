@@ -61,6 +61,7 @@ class HookRule:
     id: str
     weight: int
     pattern: re.Pattern[str]
+    scope: str = "payload"
 
 
 @dataclass(frozen=True)
@@ -121,7 +122,10 @@ def parse_policy(data: bytes) -> HookPolicy:
             compiled = re.compile(pattern, flags)
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
-        rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled))
+        scope = raw.get("scope", "payload")
+        if scope not in ("payload", "workflow_edit"):
+            raise ValueError(f"rule {index} has an unknown scope")
+        rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
 
 
@@ -270,6 +274,49 @@ def sha256_hex(data: str | bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _workflow_keys(text: str, pattern: re.Pattern[str]) -> list[str]:
+    """Select visible protected keys and their indented values."""
+    result = []
+    active_indent = None
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(stripped)
+        if pattern.match(stripped):
+            active_indent = indent + (2 if stripped.startswith("- ") else 0)
+        elif active_indent is None or indent <= active_indent:
+            active_indent = None
+        if active_indent is not None:
+            result.append(stripped)
+    return result
+
+
+def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern[str]) -> bool:
+    if tool_name not in ("Write", "Edit", "MultiEdit"):
+        return False
+    path = tool_input.get("file_path")
+    if not isinstance(path, str):
+        return False
+    if not re.search(r"(?:^|/)\.github/workflows/.+\.ya?ml$|(?:^|/)\.gitlab-ci\.yml$", path):
+        return False
+    if tool_name == "Write":
+        content = tool_input.get("content")
+        return not isinstance(content, str) or bool(_workflow_keys(content, pattern))
+    edits = tool_input.get("edits") if tool_name == "MultiEdit" else [tool_input]
+    if not isinstance(edits, list) or not edits:
+        return True
+    for edit in edits:
+        if not isinstance(edit, dict):
+            return True
+        before, after = edit.get("old_string"), edit.get("new_string")
+        if not isinstance(before, str) or not isinstance(after, str):
+            return True
+        if _workflow_keys(before, pattern) != _workflow_keys(after, pattern):
+            return True
+    return False
+
+
 def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
@@ -292,7 +339,11 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.pattern.search(combined):
+        if rule.scope == "workflow_edit":
+            matched = _matches_workflow_edit(tool_name, tool_input, rule.pattern)
+        else:
+            matched = bool(rule.pattern.search(combined))
+        if matched:
             score = min(100, score + rule.weight)
             triggered.append(rule.id)
 

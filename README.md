@@ -38,6 +38,7 @@ receiptd verify-card card.json
 
 - Tools outside the configured matcher, including `Read`, and activity such as prompts and approvals that does not reach PreToolUse.
 - Obfuscation and command behavior the policy rules cannot observe.
+- Workflow checking compares protected keys visible in edit snippets. Comment-only and descriptive edits can pass. Whole-file writes containing protected keys can be denied even when those keys are unchanged.
 - Tool calls outside Claude Code's installed hook path.
 
 ## Trifecta Card

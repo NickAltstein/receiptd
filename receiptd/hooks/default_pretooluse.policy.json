@@ -21,6 +21,13 @@
       "weight": 85,
       "ignore_case": true,
       "pattern": "(\\bsudo\\b|chmod\\s+777|chown\\s+root|\\.claude/settings(\\.local)?\\.json)"
+    },
+    {
+      "id": "POL-04:WORKFLOW_PROTECTED_KEYS",
+      "weight": 85,
+      "ignore_case": false,
+      "pattern": "^(?:-\\s+)?(?:run|uses|permissions|'run'|'uses'|'permissions'|\\\"run\\\"|\\\"uses\\\"|\\\"permissions\\\")\\s*:",
+      "scope": "workflow_edit"
     }
   ]
 }
