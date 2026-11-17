@@ -50,6 +50,13 @@
       "ignore_case": false,
       "scope": "shell_command",
       "pattern": "\\b(?:bash|sh)\\s+[^\\n;|]*?-i\\b[^\\n;|]*?/dev/tcp/|\\b(?:nc|ncat|netcat)\\s+[^\\n;|]*?\\s?-(?:e|c)(?:\\s|=)|\\bsocat\\s+[^\\n;|]*?\\bexec:|(?=[^\\n]*\\bmkfifo\\b)(?=[^\\n]*\\b(?:nc|ncat|netcat)\\b)[^\\n]*\\||\\b(?:python(?:[23](?:\\.\\d+)?)?|perl|ruby)\\s+[^\\n;]*?\\s?-c\\b(?=[^\\n]*\\bsocket\\b)(?=[^\\n]*\\b(?:pty|dup2)\\b)"
+    },
+    {
+      "id": "POL-08:SHELL_PERSISTENCE",
+      "weight": 90,
+      "ignore_case": false,
+      "scope": "shell_command",
+      "pattern": "(?:>{1,2}\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)|\\b(?:cp|mv|install)\\s+[^\\n;&|]*?\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)[\"\\x27]?\\s*(?=[;&|\\n]|$)|\\bcrontab\\s+-(?=\\s*(?:[<;&|]|$))|\\bsystemctl\\s+--user\\s+enable\\b)"
     }
   ]
 }

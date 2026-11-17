@@ -6,6 +6,7 @@
 
 ## [1.2.0] - Unreleased
 
+- Deny shell strings that write to startup or hook paths or enable a user service.
 - Require both a credential-read and a network indicator for the Bash credential rule.
 - Deny shell strings that match remote shell indicators.
 - Deny shell commands that feed downloaded or decoded content to an interpreter.
