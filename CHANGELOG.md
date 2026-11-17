@@ -4,6 +4,15 @@
 
 - PyPI project page links to the GitHub repository, issues, and changelog.
 
+## [1.2.0] - Unreleased
+
+- Deny shell strings that write to startup or hook paths or enable a user service.
+- Require both a credential-read and a network indicator for the Bash credential rule.
+- Deny shell strings that match remote shell indicators.
+- Deny shell commands that feed downloaded or decoded content to an interpreter.
+- Check visible workflow edits and compare whole-file changes to workflow controls.
+- Deny structured writes and edits on shell startup, Git hook, and service registration paths.
+
 ## [1.1.1]
 
 - Align the CLI, package, and health endpoint version at 1.1.1.

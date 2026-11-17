@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from ..crypto import (
     SigningKey,
     canonical_json,
@@ -61,6 +63,7 @@ class HookRule:
     id: str
     weight: int
     pattern: re.Pattern[str]
+    scope: str = "payload"
 
 
 @dataclass(frozen=True)
@@ -121,7 +124,10 @@ def parse_policy(data: bytes) -> HookPolicy:
             compiled = re.compile(pattern, flags)
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
-        rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled))
+        scope = raw.get("scope", "payload")
+        if scope not in ("payload", "workflow_edit", "write_path", "shell_command"):
+            raise ValueError(f"rule {index} has an unknown scope")
+        rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
 
 
@@ -270,6 +276,84 @@ def sha256_hex(data: str | bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _workflow_keys(text: str, pattern: re.Pattern[str]) -> list[str]:
+    """Select visible protected keys and their indented values."""
+    result = []
+    active_indent = None
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(stripped)
+        if pattern.match(stripped):
+            active_indent = indent + (2 if stripped.startswith("- ") else 0)
+        elif active_indent is None or indent <= active_indent:
+            active_indent = None
+        if active_indent is not None:
+            result.append(stripped)
+    return result
+
+
+def _workflow_values(text: str, pattern: re.Pattern[str]) -> dict:
+    """Compare parsed protected values at their YAML locations."""
+    root = yaml.compose(text, Loader=yaml.BaseLoader)
+    values = []
+
+    def walk(node, path, ancestors):
+        if id(node) in ancestors:
+            raise ValueError("recursive workflow alias")
+        ancestors = ancestors | {id(node)}
+        if isinstance(node, yaml.MappingNode):
+            seen = set()
+            for key, value in node.value:
+                if not isinstance(key, yaml.ScalarNode) or key.value in seen or key.value == "<<":
+                    raise ValueError("ambiguous workflow mapping")
+                seen.add(key.value)
+                child = path + (key.value,)
+                if pattern.match(key.value + ":"):
+                    values.append((child, yaml.load(yaml.serialize(value, canonical=True), Loader=yaml.BaseLoader)))
+                walk(value, child, ancestors)
+        elif isinstance(node, yaml.SequenceNode):
+            for index, value in enumerate(node.value):
+                walk(value, path + (index,), ancestors)
+
+    if not isinstance(root, yaml.MappingNode):
+        raise ValueError("workflow must be a YAML mapping")
+    walk(root, (), set())
+    return dict(values)
+
+
+def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern[str]) -> bool:
+    if tool_name not in ("Write", "Edit", "MultiEdit"):
+        return False
+    path = tool_input.get("file_path")
+    if not isinstance(path, str):
+        return False
+    if not re.search(r"(?:^|/)\.github/workflows/.+\.ya?ml$|(?:^|/)\.gitlab-ci\.yml$", path):
+        return False
+    if tool_name == "Write":
+        content = tool_input.get("content")
+        if not isinstance(content, str):
+            return True
+        try:
+            previous = Path(path).expanduser().read_text(encoding="utf-8")
+            return _workflow_values(previous, pattern) != _workflow_values(content, pattern)
+        except (OSError, ValueError, RuntimeError, yaml.YAMLError):
+            return True
+    edits = tool_input.get("edits") if tool_name == "MultiEdit" else [tool_input]
+    if not isinstance(edits, list) or not edits:
+        return True
+    for edit in edits:
+        if not isinstance(edit, dict):
+            return True
+        before, after = edit.get("old_string"), edit.get("new_string")
+        if not isinstance(before, str) or not isinstance(after, str):
+            return True
+        if _workflow_keys(before, pattern) != _workflow_keys(after, pattern):
+            return True
+    return False
+
+
 def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
@@ -289,10 +373,24 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     tool_name = tool_name.strip()
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
 
+    command = tool_input.get("command") if tool_name == "Bash" else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.pattern.search(combined):
+        if rule.scope == "workflow_edit":
+            matched = _matches_workflow_edit(tool_name, tool_input, rule.pattern)
+        elif rule.scope == "write_path":
+            path = tool_input.get("file_path")
+            matched = (
+                tool_name in ("Write", "Edit", "MultiEdit")
+                and isinstance(path, str)
+                and bool(rule.pattern.search(os.path.normpath(path)))
+            )
+        elif rule.scope == "shell_command":
+            matched = isinstance(command, str) and bool(rule.pattern.search(command))
+        else:
+            matched = bool(rule.pattern.search(combined))
+        if matched:
             score = min(100, score + rule.weight)
             triggered.append(rule.id)
 
