@@ -252,3 +252,132 @@ def run_seatbelt_preflight(
     if not (read_blocked and write_blocked and net_blocked and env_clean):
         raise ContainmentPreflightError(f"Seatbelt preflight failed: {details}")
     return details
+
+
+def _parse_listen_name(name_field: str) -> tuple[str, int] | None:
+    """Parse host and integer port from an lsof NAME column like 127.0.0.1:11434 or [::1]:6379."""
+    token = name_field.strip()
+    if token.endswith("(LISTEN)"):
+        token = token[: -len("(LISTEN)")].strip()
+    if ":" not in token:
+        return None
+    if token.startswith("["):
+        end_bracket = token.find("]:")
+        if end_bracket == -1:
+            return None
+        host = token[: end_bracket + 1]
+        port_str = token[end_bracket + 2 :]
+    else:
+        host, port_str = token.rsplit(":", 1)
+    try:
+        port = int(port_str)
+    except ValueError:
+        return None
+    return host, port
+
+
+def _is_loopback_reachable_host(host: str) -> bool:
+    """Return True if socket host binds loopback or wildcard reachable on localhost."""
+    return (
+        host.startswith("127.")
+        or host in ("localhost", "[::1]", "*", "[::]")
+    )
+
+
+def list_listening_loopback_ports(
+    *,
+    lsof_output: str | None = None,
+    subprocess_runner: Any = subprocess.run,
+) -> list[dict[str, Any]]:
+    """List listening TCP sockets reachable on loopback via lsof -nP -iTCP -sTCP:LISTEN."""
+    if lsof_output is None:
+        proc = subprocess_runner(
+            ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode not in (0, 1):
+            raise ContainmentPreflightError(
+                f"lsof loopback check failed (rc={proc.returncode}): {proc.stderr.strip()}"
+            )
+        raw = proc.stdout
+    else:
+        raw = lsof_output
+
+    listeners: list[dict[str, Any]] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("COMMAND "):
+            continue
+        parts = stripped.split()
+        if len(parts) < 9:
+            continue
+        command = parts[0]
+        try:
+            pid = int(parts[1])
+        except ValueError:
+            pid = -1
+        name_part = parts[8]
+        if len(parts) >= 10 and parts[9] == "(LISTEN)":
+            name_part = f"{parts[8]} {parts[9]}"
+        parsed = _parse_listen_name(name_part)
+        if parsed is None:
+            continue
+        host, port = parsed
+        if not _is_loopback_reachable_host(host):
+            continue
+        listeners.append(
+            {
+                "command": command,
+                "pid": pid,
+                "host": host,
+                "port": port,
+                "address": f"{host}:{port}",
+                "raw_line": stripped,
+            }
+        )
+    return listeners
+
+
+def check_loopback_preflight(
+    *,
+    allowed_dcode_ports: tuple[int, ...] | set[int] = (),
+    lsof_output: str | None = None,
+    log_path: Path | None = None,
+    subprocess_runner: Any = subprocess.run,
+) -> dict[str, Any]:
+    """Verify only Ollama (11434) and optional dcode port(s) listen on loopback; log and abort otherwise."""
+    listeners = list_listening_loopback_ports(
+        lsof_output=lsof_output,
+        subprocess_runner=subprocess_runner,
+    )
+    allowed_ports = set(allowed_dcode_ports)
+    disallowed: list[dict[str, Any]] = []
+    for entry in listeners:
+        cmd_lower = entry["command"].lower()
+        port = entry["port"]
+        is_ollama = cmd_lower.startswith("ollama") and port == 11434
+        is_dcode = port in allowed_ports and cmd_lower.startswith(("dcode", "langgraph", "python"))
+        if not (is_ollama or is_dcode):
+            disallowed.append(entry)
+
+    report = {
+        "ok": len(disallowed) == 0,
+        "listening_loopback_ports": listeners,
+        "disallowed_ports": disallowed,
+        "allowed_dcode_ports": sorted(allowed_ports),
+    }
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+    if disallowed:
+        formatted = ", ".join(f"{d['command']}(pid={d['pid']})@{d['address']}" for d in disallowed)
+        all_formatted = ", ".join(f"{e['command']}@{e['address']}" for e in listeners)
+        raise ContainmentPreflightError(
+            f"Disallowed loopback listeners active before case 1: [{formatted}]. "
+            f"Full listening loopback list: [{all_formatted}]"
+        )
+    return report
+

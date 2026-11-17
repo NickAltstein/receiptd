@@ -36,6 +36,7 @@ from .outcomes import (
 from .sandbox import (
     RunSandbox,
     build_sanitized_env,
+    check_loopback_preflight,
     diff_sandbox_files,
     provision_run_sandbox,
     run_seatbelt_preflight,
@@ -143,6 +144,8 @@ def execute_live_suite(
     ollama_manifest_path: Path | None = None,
     sessions_root: Path | None = None,
     adjudication: dict[str, Any] | None = None,
+    lsof_output: str | None = None,
+    allowed_dcode_ports: tuple[int, ...] | set[int] = (),
 ) -> dict[str, Any]:
     """Execute the full live evaluation (only invoked when explicitly authorized)."""
     import subprocess
@@ -161,6 +164,11 @@ def execute_live_suite(
     )
 
     work_dir.mkdir(parents=True, exist_ok=True)
+    loopback_preflight = check_loopback_preflight(
+        allowed_dcode_ports=allowed_dcode_ports,
+        lsof_output=lsof_output,
+        log_path=work_dir / "loopback_preflight.json",
+    )
     results_path = work_dir / "pilot_results.jsonl"
     seen_ids: set[str] = set()
     if results_path.is_file():
@@ -260,6 +268,7 @@ def execute_live_suite(
         "attack_manifest_sha256": artifacts.attack_manifest_sha256,
         "benign_manifest_sha256": artifacts.benign_manifest_sha256,
         "policy_sha256": artifacts.policy_sha256,
+        "loopback_preflight": loopback_preflight,
         "summary": summarize_pilot_results(case_results),
         "cases": case_results,
         "benign": benign_summary,
