@@ -34,7 +34,9 @@ receiptd verify-card card.json
 
 ## Trifecta Card
 
-**One line:** `receiptd card` reads your Claude Code / Codex session logs offline, classifies tool calls that are present with fixed rules, and answers one question — *did this session hit the lethal trifecta of private data + untrusted input + egress?* — as a colored terminal verdict, a shareable `card.png` / `card.svg`, and a signed `card.json` you can check later with `receiptd verify-card`.
+`receiptd card` classifies tool calls recorded in Claude Code and Codex session transcripts after the session. It shows a RED or GREEN Trifecta verdict, exports `card.png` or `card.svg`, and writes a signed `card.json` you can check with `receiptd verify-card`.
+
+**RED example:** This transcript matched rules for private data, untrusted input, and egress. Gate allow and deny decisions are recorded separately in `.receiptd/receipts.jsonl`.
 
 ![Example Trifecta Card (RED)](docs/trifecta_example.png)
 
