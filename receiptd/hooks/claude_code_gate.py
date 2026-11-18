@@ -8,6 +8,15 @@ Exit 2 -> Tool HARD BLOCKED (fail-closed) + signed rejection receipt emitted.
 from __future__ import annotations
 
 from .normalize import extract_normalized_paths, normalize_tool_input
+from .session_rules import (
+    RECEIPT_TYPE_ADAPTIVE_RETRY,
+    RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION,
+    RECEIPT_TYPE_SESSION_DENIED,
+    evaluate_adaptive_retry,
+    protected_path_hashes_for_call,
+    read_session_receipts,
+    resolve_adaptive_retry_window,
+)
 
 import hashlib
 import json
@@ -528,9 +537,12 @@ def _run() -> int:
             except ValueError:
                 pass
 
-        tool_name = str(payload.get("tool_name", ""))
+        tool_name = str(payload.get("tool_name", "")).strip()
         tool_input = payload.get("tool_input", {})
         args_sha256 = sha256_hex(canonical_json(tool_input))
+        norm_input, norm_trace, norm_args_sha256 = normalize_tool_input(tool_name, tool_input)
+        protected_hashes = protected_path_hashes_for_call(tool_name, tool_input)
+        adaptive_window = resolve_adaptive_retry_window()
         session_id = str(payload.get("session_id") or os.environ.get("RECEIPTD_SESSION_ID", "default"))
         _CTX.update(
             tool_name=tool_name,
@@ -550,15 +562,73 @@ def _run() -> int:
         # Read existing ledger state and write next receipt under exclusive inter-process lock
         with lock_ledger(ledger_path):
             prev_hash, last_cp_hash, receipt_count, last_cp_seq, uncheckpointed = read_ledger_state(ledger_path)
+            now_dt = datetime.now(timezone.utc)
+            now_iso = now_dt.isoformat()
+            session_receipts = read_session_receipts(ledger_path, session_id)
+            retry_verdict = evaluate_adaptive_retry(
+                session_receipts,
+                tool_name=tool_name,
+                normalized_args_sha256=norm_args_sha256,
+                protected_path_hashes=protected_hashes,
+                now=now_dt,
+                window_seconds=adaptive_window,
+            )
+
+            extra_fields: dict = {
+                "tool_input": tool_input,
+                "normalized_args_sha256": norm_args_sha256,
+            }
+            if protected_hashes:
+                extra_fields["protected_path_hashes"] = protected_hashes
+
+            if retry_verdict.kind == RECEIPT_TYPE_SESSION_DENIED:
+                blocked = True
+                score = 100
+                decision = "deny"
+                triggered = [retry_verdict.rule_id]
+                reason = retry_verdict.reason or "session denied"
+                extra_fields["receipt_type"] = RECEIPT_TYPE_SESSION_DENIED
+                extra_fields["session_denied"] = True
+            elif retry_verdict.kind == RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION:
+                blocked = True
+                score = 100
+                decision = "deny"
+                rule_id = str(retry_verdict.rule_id)
+                triggered = [rule_id] + [r for r in triggered if r != rule_id]
+                reason = retry_verdict.reason or f"session denied: matched rule {rule_id}"
+                extra_fields["receipt_type"] = RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION
+                extra_fields["session_denied"] = True
+                extra_fields["prior_denied_args_sha256"] = retry_verdict.prior_denied_args_sha256
+                extra_fields["prior_denied_receipt_hash"] = retry_verdict.prior_denied_receipt_hash
+                extra_fields["retry_args_sha256"] = norm_args_sha256
+                extra_fields["normalization_trace"] = norm_trace
+                if retry_verdict.origin_denied_ts:
+                    extra_fields["origin_denied_ts"] = retry_verdict.origin_denied_ts
+            elif retry_verdict.kind == RECEIPT_TYPE_ADAPTIVE_RETRY:
+                blocked = True
+                score = 100
+                decision = "deny"
+                rule_id = str(retry_verdict.rule_id)
+                triggered = [rule_id] + [r for r in triggered if r != rule_id]
+                reason = retry_verdict.reason or f"matched rule {rule_id}"
+                extra_fields["receipt_type"] = RECEIPT_TYPE_ADAPTIVE_RETRY
+                extra_fields["prior_denied_args_sha256"] = retry_verdict.prior_denied_args_sha256
+                extra_fields["prior_denied_receipt_hash"] = retry_verdict.prior_denied_receipt_hash
+                extra_fields["retry_args_sha256"] = norm_args_sha256
+                extra_fields["normalization_trace"] = norm_trace
+                if retry_verdict.origin_denied_ts:
+                    extra_fields["origin_denied_ts"] = retry_verdict.origin_denied_ts
+
             seq = receipt_count + 1
             latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            extra_fields["latency_ms"] = latency_ms
 
             if signing_failed or sk is None:
                 # Signing failure must fail-closed with exit 2 and write an unsigned deny receipt
                 unsigned_receipt = build_unsigned_signing_error_receipt(
                     v=1,
                     seq=seq,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=now_iso,
                     session_id=session_id,
                     tool=tool_name,
                     args_sha256=args_sha256,
@@ -568,7 +638,7 @@ def _run() -> int:
                     reason="receiptd: signing unavailable",
                     policy_sha256=policy_sha256,
                     prev_hash=prev_hash,
-                    extra_fields={"latency_ms": latency_ms, "tool_input": tool_input},
+                    extra_fields=extra_fields,
                 )
                 with _LEDGER_LOCK:
                     append_ledger_entry(ledger_path, unsigned_receipt)
@@ -582,7 +652,7 @@ def _run() -> int:
                 sk=sk,
                 v=1,
                 seq=seq,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=now_iso,
                 session_id=session_id,
                 tool=tool_name,
                 args_sha256=args_sha256,
@@ -592,7 +662,7 @@ def _run() -> int:
                 reason=reason,
                 policy_sha256=policy_sha256,
                 prev_hash=prev_hash,
-                extra_fields={"latency_ms": latency_ms, "tool_input": tool_input},
+                extra_fields=extra_fields,
             )
             # Receipt, checkpoint, and "finished" go in one locked block so the
             # watchdog sees either nothing written or the whole decision.

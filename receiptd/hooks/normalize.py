@@ -331,12 +331,15 @@ def extract_normalized_paths(
         cmd = tool_input.get("command")
         if isinstance(cmd, str) and cmd.strip():
             norm_cmd, _ = normalize_text(cmd, home=home)
-            for token in norm_cmd.split():
-                if token.startswith("-") or "://" in token or token in ("|", "&&", "||", ";", ">", ">>", "<"):
+            # Strip URL schemes before tokenizing embedded path expressions such as open(.env) or @.env.
+            scrubbed = re.sub(r"https?://\S+", " ", norm_cmd)
+            for token in re.findall(r"[A-Za-z0-9_./~$:-]+", scrubbed):
+                cleaned = token.strip(":")
+                if not cleaned or cleaned.startswith("-"):
                     continue
-                if "/" in token or token.startswith(".") or token.startswith("~") or any(
-                    name in token for name in (".env", "credentials", "id_rsa", "id_ed25519", "settings.json")
+                if "/" in cleaned or cleaned.startswith(".") or cleaned.startswith("~") or any(
+                    name in cleaned for name in (".env", "credentials", "id_rsa", "id_ed25519", "settings.json")
                 ):
-                    _add(token.rstrip(";|&"))
+                    _add(cleaned)
 
     return found
