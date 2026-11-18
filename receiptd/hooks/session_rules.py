@@ -7,38 +7,45 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from ..crypto import sha256_hex
-from .normalize import extract_normalized_paths, normalize_tool_input
+from ..crypto import canonical_json, sha256_hex
+from .normalize import extract_normalized_paths, normalize_text, normalize_tool_input
 
 # Default bounds, not tuned values.
 DEFAULT_ADAPTIVE_RETRY_WINDOW_SECONDS = 60
+DEFAULT_RECON_COUNT = 5
+DEFAULT_RECON_WINDOW_SECONDS = 30
+DEFAULT_EXPLOIT_WINDOW_SECONDS = 60
+DEFAULT_DENY_ON_FAST_CHAIN = False
 
 RULE_ADAPTIVE_RETRY = "RULE-01:ADAPTIVE_RETRY"
 RULE_ADAPTIVE_RETRY_ESCALATION = "RULE-01:ADAPTIVE_RETRY_ESCALATION"
 RULE_SESSION_DENIED = "RULE-01:SESSION_DENIED"
+RULE_FAST_CHAIN = "RULE-02:FAST_RECON_EXPLOIT_CHAIN"
 
 RECEIPT_TYPE_ADAPTIVE_RETRY = "adaptive_retry"
 RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION = "adaptive_retry_escalation"
 RECEIPT_TYPE_SESSION_DENIED = "session_denied"
+RECEIPT_TYPE_FAST_CHAIN = "fast_chain"
 
 _PROTECTED_PATH_PATTERNS = (
     re.compile(r"(?:^|/)\.env(?:\.[^/\s]*)?$"),
-    re.compile(r"(?:^|/)\.aws/(?:credentials|config)$"),
-    re.compile(r"(?:^|/)\.ssh/(?:id_[^/\s]+|authorized_keys|config|known_hosts)$"),
+    re.compile(r"(?:^|/)\.aws(?:/|$)"),
+    re.compile(r"(?:^|/)\.ssh(?:/|$)"),
     re.compile(r"(?:^|/)\.(?:netrc|npmrc|pypirc)$"),
-    re.compile(r"(?:^|/)\.kube/config$"),
+    re.compile(r"(?:^|/)\.kube(?:/|$)"),
     re.compile(r"(?:^|/)\.claude/settings(?:\.local)?\.json$"),
     re.compile(r"(?:^|/)\.github/workflows/[^/\s]+\.ya?ml$"),
     re.compile(r"(?:^|/)\.(?:bashrc|zshrc|profile|bash_profile)$"),
-    re.compile(r"(?:^|/)\.git/hooks/"),
-    re.compile(r"(?:^|/)library/launchagents/"),
-    re.compile(r"(?:^|/)launchdaemons/"),
-    re.compile(r"(?:^|/)\.config/systemd/user/"),
+    re.compile(r"(?:^|/)\.git/hooks(?:/|$)"),
+    re.compile(r"(?:^|/)library/launchagents(?:/|$)"),
+    re.compile(r"(?:^|/)launchdaemons(?:/|$)"),
+    re.compile(r"(?:^|/)\.config/systemd/user(?:/|$)"),
     re.compile(r"^/etc/(?:passwd|shadow|sudoers)$"),
     re.compile(r"(?:^|/)credentials(?:\.[^/\s]+)?$"),
 )
@@ -236,4 +243,270 @@ def evaluate_adaptive_retry(
         prior_denied_receipt_hash=str(anchor.get("hash") or anchor.get("receipt_sha256") or "") or None,
         prior_denied_args_sha256=str(anchor.get("normalized_args_sha256") or _row_norm_hash(anchor) or "") or None,
         origin_denied_ts=str(anchor.get("ts") or "") or None,
+    )
+
+
+@dataclass(frozen=True)
+class ReconClassRule:
+    id: str
+    tools: tuple[str, ...] = ()
+    tool_prefix: str = ""
+    requires_protected_path: bool = False
+    requires_non_allowlisted_domain: bool = False
+    pattern: re.Pattern[str] | None = None
+
+
+@dataclass(frozen=True)
+class ExploitClassRule:
+    id: str
+    tools: tuple[str, ...] = ()
+    matches_policy_deny: bool = False
+    requires_protected_path: bool = False
+    protected_write_pattern: re.Pattern[str] | None = None
+
+
+@dataclass(frozen=True)
+class FastChainConfig:
+    """Configuration for Rule 2. Numeric thresholds are defaults, not tuned values."""
+
+    recon_count: int = DEFAULT_RECON_COUNT
+    recon_window_seconds: int = DEFAULT_RECON_WINDOW_SECONDS
+    exploit_window_seconds: int = DEFAULT_EXPLOIT_WINDOW_SECONDS
+    deny_session: bool = DEFAULT_DENY_ON_FAST_CHAIN
+    webfetch_allowlisted_domains: tuple[str, ...] = ("localhost", "127.0.0.1")
+    recon_classes: tuple[ReconClassRule, ...] = ()
+    exploit_classes: tuple[ExploitClassRule, ...] = ()
+
+
+@dataclass(frozen=True)
+class FastChainVerdict:
+    matched: bool
+    exploit_class: str | None = None
+    recon_seqs: tuple[int, ...] = ()
+    recon_hashes: tuple[str, ...] = ()
+    deny_session: bool = False
+    reason: str | None = None
+
+
+def resolve_fast_chain_config(
+    config: FastChainConfig | None = None,
+    environ: dict[str, str] | None = None,
+) -> FastChainConfig:
+    base = config or FastChainConfig()
+    env = os.environ if environ is None else environ
+
+    recon_count = base.recon_count
+    recon_window = base.recon_window_seconds
+    exploit_window = base.exploit_window_seconds
+    deny_session = base.deny_session
+
+    for raw, target in (
+        (env.get("RECEIPTD_RECON_COUNT"), "recon_count"),
+        (env.get("RECEIPTD_RECON_WINDOW_SECONDS"), "recon_window"),
+        (env.get("RECEIPTD_EXPLOIT_WINDOW_SECONDS"), "exploit_window"),
+    ):
+        if raw is None:
+            continue
+        try:
+            val = int(raw)
+        except ValueError:
+            continue
+        if val > 0:
+            if target == "recon_count":
+                recon_count = val
+            elif target == "recon_window":
+                recon_window = val
+            elif target == "exploit_window":
+                exploit_window = val
+
+    raw_deny = env.get("RECEIPTD_DENY_ON_FAST_CHAIN")
+    if raw_deny is not None:
+        normalized_flag = raw_deny.strip().lower()
+        if normalized_flag in ("1", "true", "yes", "on"):
+            deny_session = True
+        elif normalized_flag in ("0", "false", "no", "off"):
+            deny_session = False
+
+    return FastChainConfig(
+        recon_count=recon_count,
+        recon_window_seconds=recon_window,
+        exploit_window_seconds=exploit_window,
+        deny_session=deny_session,
+        webfetch_allowlisted_domains=base.webfetch_allowlisted_domains,
+        recon_classes=base.recon_classes,
+        exploit_classes=base.exploit_classes,
+    )
+
+
+def _extract_url_hostname(tool_input: Any) -> str | None:
+    if not isinstance(tool_input, dict):
+        return None
+    for key in ("url", "uri", "target_url"):
+        val = tool_input.get(key)
+        if isinstance(val, str) and val.strip():
+            parsed = urlparse(val.strip())
+            if parsed.hostname:
+                return parsed.hostname.lower()
+    return None
+
+
+def classify_recon_call(
+    tool_name: str,
+    tool_input: Any,
+    config: FastChainConfig,
+) -> str | None:
+    """Return matching recon class ID from policy config, or None."""
+    if not tool_name or not config.recon_classes:
+        return None
+
+    clean_tool = tool_name.strip()
+    norm_input, _, _ = normalize_tool_input(clean_tool, tool_input)
+    raw_blob = f"{clean_tool} {canonical_json(tool_input if isinstance(tool_input, dict) else {}).decode('utf-8')}"
+    norm_blob = f"{clean_tool} {canonical_json(norm_input).decode('utf-8')}"
+    has_protected = bool(protected_path_hashes_for_call(clean_tool, tool_input))
+
+    for rule in config.recon_classes:
+        if rule.tools and clean_tool not in rule.tools:
+            continue
+        if rule.tool_prefix and not clean_tool.startswith(rule.tool_prefix):
+            continue
+
+        if rule.requires_non_allowlisted_domain:
+            host = _extract_url_hostname(tool_input)
+            allowlist = {d.lower() for d in config.webfetch_allowlisted_domains}
+            if host and host in allowlist:
+                continue
+            return rule.id
+
+        if rule.requires_protected_path:
+            pattern_hit = False
+            if rule.pattern is not None and isinstance(tool_input, dict):
+                pat_val = tool_input.get("pattern")
+                if isinstance(pat_val, str) and (
+                    rule.pattern.search(pat_val) or rule.pattern.search(normalize_text(pat_val)[0])
+                ):
+                    pattern_hit = True
+            if has_protected or pattern_hit:
+                return rule.id
+            continue
+
+        if rule.pattern is not None:
+            if rule.pattern.search(raw_blob) or rule.pattern.search(norm_blob):
+                return rule.id
+            continue
+
+        return rule.id
+
+    return None
+
+
+def classify_exploit_call(
+    tool_name: str,
+    tool_input: Any,
+    triggered_rules: list[str],
+    config: FastChainConfig,
+) -> str | None:
+    """Return matching exploit class ID from policy config, or None."""
+    if not tool_name or not config.exploit_classes:
+        return None
+
+    clean_tool = tool_name.strip()
+    norm_input, _, _ = normalize_tool_input(clean_tool, tool_input)
+    has_protected = bool(protected_path_hashes_for_call(clean_tool, tool_input))
+    pol_denies = any(rid.startswith("POL-") for rid in triggered_rules)
+
+    for rule in config.exploit_classes:
+        if rule.tools and clean_tool not in rule.tools:
+            continue
+
+        if rule.matches_policy_deny and pol_denies:
+            return rule.id
+
+        if rule.protected_write_pattern is not None and isinstance(tool_input, dict):
+            raw_cmd = tool_input.get("command")
+            norm_cmd = norm_input.get("command")
+            if (isinstance(raw_cmd, str) and rule.protected_write_pattern.search(raw_cmd)) or (
+                isinstance(norm_cmd, str) and rule.protected_write_pattern.search(norm_cmd)
+            ):
+                return rule.id
+
+        if rule.requires_protected_path and (
+            has_protected
+            or any(rid.startswith(("POL-03", "POL-04", "POL-05")) for rid in triggered_rules)
+        ):
+            return rule.id
+
+    return None
+
+
+@dataclass(frozen=True)
+class _ReconEvent:
+    seq: int
+    ts: datetime
+    receipt_hash: str
+    recon_class: str
+
+
+def evaluate_fast_chain(
+    session_receipts: list[dict[str, Any]],
+    *,
+    tool_name: str,
+    tool_input: Any,
+    triggered_rules: list[str],
+    now: datetime,
+    config: FastChainConfig,
+) -> FastChainVerdict:
+    """Evaluate Rule 2 (>= N recon within W1 followed by exploit-class within W2)."""
+    exploit_class = classify_exploit_call(tool_name, tool_input, triggered_rules, config)
+    if exploit_class is None:
+        return FastChainVerdict(matched=False)
+
+    already_chained_seqs: set[int] = set()
+    for row in session_receipts:
+        if row.get("receipt_type") == RECEIPT_TYPE_FAST_CHAIN:
+            for s in row.get("recon_seqs") or []:
+                if isinstance(s, int):
+                    already_chained_seqs.add(s)
+
+    recon_events: list[_ReconEvent] = []
+    for row in session_receipts:
+        seq = row.get("seq")
+        if not isinstance(seq, int) or seq in already_chained_seqs:
+            continue
+        row_ts = parse_timestamp(row.get("ts"))
+        if row_ts is None or row_ts > now:
+            continue
+        row_hash = str(row.get("hash") or row.get("receipt_sha256") or "")
+        recon_class = row.get("recon_class")
+        if not isinstance(recon_class, str) or not recon_class:
+            row_tool = str(row.get("tool") or row.get("tool_name") or "")
+            recon_class = classify_recon_call(row_tool, row.get("tool_input"), config)
+        if isinstance(recon_class, str) and recon_class:
+            recon_events.append(_ReconEvent(seq=seq, ts=row_ts, receipt_hash=row_hash, recon_class=recon_class))
+
+    n = config.recon_count
+    if len(recon_events) < n:
+        return FastChainVerdict(matched=False)
+
+    recon_events.sort(key=lambda item: (item.ts, item.seq))
+
+    matched_window: list[_ReconEvent] | None = None
+    for idx in range(len(recon_events) - n + 1):
+        window = recon_events[idx : idx + n]
+        span_seconds = (window[-1].ts - window[0].ts).total_seconds()
+        gap_seconds = (now - window[-1].ts).total_seconds()
+        if 0 <= span_seconds <= config.recon_window_seconds and 0 <= gap_seconds <= config.exploit_window_seconds:
+            matched_window = window
+
+    if matched_window is None:
+        return FastChainVerdict(matched=False)
+
+    mode_note = "session denied" if config.deny_session else "receipt-only"
+    return FastChainVerdict(
+        matched=True,
+        exploit_class=exploit_class,
+        recon_seqs=tuple(item.seq for item in matched_window),
+        recon_hashes=tuple(item.receipt_hash for item in matched_window),
+        deny_session=config.deny_session,
+        reason=f"matched rule {RULE_FAST_CHAIN} ({mode_note})",
     )

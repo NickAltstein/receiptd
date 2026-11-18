@@ -106,6 +106,10 @@ def version() -> None:
 INIT_LEDGER_PATH = ".receiptd/receipts.jsonl"
 LEGACY_LEDGER_PATH = ".birkin/receipts.jsonl"
 INIT_POLICY_PATH = ".receiptd/pretooluse.policy.json"
+# Claude Code PreToolUse matcher.
+# Host hook coverage difference: dcode hooks Bash, Write, Edit, MultiEdit, and mcp__*
+# (it does not hook Read, Glob, or Grep). Claude Code sees Read, Glob, Grep, or WebFetch
+# only if the user or repo matcher explicitly includes them.
 PRETOOLUSE_MATCHER = "Bash|Write|Edit|MultiEdit|mcp__.*"
 # Seconds. Must stay above the gate's internal deadline
 # (RECEIPTD_HOOK_DEADLINE_MS, default 5000) so the gate denies before
