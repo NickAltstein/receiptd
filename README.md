@@ -278,6 +278,28 @@ Signed receipts are tamper-evident logs of the tool calls Receiptd evaluated. Th
 
 ---
 
+## What v1.3 does not catch
+
+Receiptd v1.3 adds deterministic lexical normalization (`receiptd/hooks/normalize.py`), Rule 1 adaptive-retry session denial (`RULE-01`), and Rule 2 fast recon-to-exploit chain receipts (`RULE-02`) on top of the PreToolUse rules. All numeric bounds in v1.3 (`W=60s` for Rule 1; `N=5`, `W1=30s`, `W2=60s` for Rule 2; `4096`-byte base64 decode cap) are defaults, not tuned values. Do not interpret these rules as evidence that the adaptive-retry or fast-chain patterns have been observed in production ledgers.
+
+1. **Multi-level encoding, custom ciphers, and runtime command construction:**
+   The lexical normalizer decodes URL percent-encoding and one level of Base64 up to `4096` bytes (`DEFAULT_MAX_BASE64_INPUT_BYTES`, default, not a tuned value), strips quotes and backslashes, collapses whitespace, folds case, canonicalizes path separators, and expands `~`/`$HOME` when `HOME` is set. Nested Base64 beyond one level, XOR/custom encodings, shell variable expansion (`cmd=...; $cmd`), command substitution evaluated only at execution time, renamed binaries, and indirect execution inside scripts or test runners are not resolved.
+
+2. **Host hook coverage (`dcode` vs Claude Code):**
+   - **`dcode`:** hooks `Bash`, `Write`, `Edit`, `MultiEdit`, and `mcp__*`. It does not hook `Read`, `Glob`, or `Grep`, so Rule 2 sees only `WebFetch` (if hooked) and environment-enumerating `mcp__*` recon calls under `dcode`.
+   - **Claude Code:** `receiptd init --claude-code` installs the default matcher `Bash|Write|Edit|MultiEdit|mcp__.*`. Claude Code sends `Read`, `Glob`, `Grep`, or `WebFetch` to the gate only when the repository or user `PreToolUse` matcher is extended to include them. Unhooked tools leave no receipts and do not feed Rule 1 or Rule 2.
+
+3. **Retries across tools, sessions, or expired windows:**
+   Rule 1 (`RULE-01:ADAPTIVE_RETRY`, `RULE-01:ADAPTIVE_RETRY_ESCALATION`) matches only within the same `session_id`, on the same `tool` name, within `W` seconds (default `60s`, not tuned), and with either matching `normalized_args_sha256` or a shared normalized protected path. Switching to a different tool, targeting a non-protected path, creating a new `session_id`, or waiting past `W` avoids Rule 1. User-corrected retries with different non-protected arguments, transient retries of allowed calls, and same-tool calls to different targets remain allowed.
+
+4. **Rule 2 receipt-only default and explicit policy scope:**
+   Rule 2 (`RULE-02:FAST_RECON_EXPLOIT_CHAIN`) writes a signed `fast_chain` receipt when `>= N` (default `5`) recon calls occur within `W1` seconds (default `30s`) followed by an exploit-class call within `W2` seconds (default `60s`). By default (`fast_chain.deny_session: false`), Rule 2 is receipt-only and does not deny later calls unless opted in via policy (`fast_chain.deny_session: true`) or `RECEIPTD_DENY_ON_FAST_CHAIN=1`. Recon and exploit classes depend on explicit rules in `receiptd/hooks/default_pretooluse.policy.json`; slow recon spaced outside `W1`/`W2` or reads/edits outside those classes emit no chain receipt.
+
+5. **Signing key and ledger host assumptions:**
+   As in `v1.2`, receipts are signed with `~/.receiptd/receiptd_ed25519.pem` on the same host, and uncheckpointed tail receipts remain bounded only against `ledger_state.json` or an earlier Merkle checkpoint.
+
+---
+
 ## Repository Structure
 
 ```
