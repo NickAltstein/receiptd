@@ -15,7 +15,7 @@ Receiptd is a fail-closed gate for hooked AI agent tool calls.
 
 **A fail-closed gate for hooked AI agent tool calls, with Ed25519-signed receipts and offline hash-chain checking.**
 
-The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, and MCP tools (`mcp__.*`). `Read`, `WebFetch`, `Grep`, `Glob`, and any other tool that does not match that pattern pass ungated. A hooked call is about 78 ms cold. The in-process policy check is about 0.02 ms.
+The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, and MCP tools (`mcp__.*`). `Read`, `WebFetch`, `Grep`, `Glob`, and any other tool that does not match that pattern pass ungated. At `v1.2.0` (`144038e`), a cold hooked call takes 99.8 ms median (148.7 ms p95) on deny and 97.7 ms median (161.3 ms p95) on allow; the in-process policy check + signing takes 0.037 ms median (0.046 ms p95).
 
 LLM judge prompts are probabilistic and add a model call to each decision. Receiptd uses fixed rules instead. The Stop hook blocks a completion while tests fail, and gives up after 3 retries with a signed `gave_up` receipt. Every hooked tool call emits an Ed25519-signed receipt you can check offline.
 
@@ -81,7 +81,7 @@ Experience live MCP interception, WebCrypto `Ed25519` signing, and 1-byte ledger
 * **[Exploit Deep-Link #2: 1-Byte Ledger Tamper (`✗ TAMPER DETECTED`)](https://sandbox.auditgpt.ai/?scenario=poisoned-pr&step=2&tamper=1)** — Watch how flipping a single byte in the historical tool log breaks the Ed25519 signature and SHA-256 Merkle root.
 * **Platform note**: Also by me: [auditgpt](https://auditgpt.ai) (adversarial test battery across 5 failure classes, npm, MIT) and INFINI (agent loop runtime, PyPI infini-cli).
 
-> **45-Second Demo Walkthrough** — *Claude Code hits a poisoned PR → Receiptd `PreToolUse` hook hard-blocks `.env` exfiltration (about 78 ms cold per hooked call; about 0.02 ms for the in-process policy check) → `receiptd verify` flips from `AUTHENTIC` to `TAMPERED` on a 1-byte mutation.*
+> **45-Second Demo Walkthrough** — *Claude Code hits a poisoned PR → Receiptd `PreToolUse` hook hard-blocks `.env` exfiltration (99.8 ms median cold per hooked call; 0.037 ms median for in-process policy check + signing at `v1.2.0`) → `receiptd verify` flips from `AUTHENTIC` to `TAMPERED` on a 1-byte mutation.*
 
 ---
 
@@ -214,21 +214,22 @@ sequenceDiagram
 - **Fail-closed by default**: Any unhandled exception, malformed stdin JSON, missing policy, or signature mismatch stops the hooked tool call before it runs.
 - **Hook process must start**: If the hook process cannot start at all, Claude Code does not block the tool call. Claude Code blocks only when the hook exits 2; a command that never runs is not exit 2. `receiptd init` writes the absolute path of the Python interpreter that can import receiptd and ends that command with `|| exit 2`, so a shell that starts but cannot run the interpreter still exits 2. Init then runs that interpreter on a known-bad tool call and refuses to report success unless the gate itself exits 2 and appends a deny receipt. Init also writes `onFailure: block`. Claude Code's own docs say not to rely on that field, so a process that never starts can still let the call through. See [THREAT_MODEL.md](THREAT_MODEL.md#claude-code-hook).
 - **Canonical hashing**: Payloads are normalized via canonical JSON (sorted keys) before SHA-256 hashing.
-- **Fixed rules in memory**: No model call on the hooked path (about 0.02 ms in-process; about 78 ms cold per hooked call). Rule patterns and Ed25519 signing run locally.
+- **Fixed rules in memory**: No model call on the hooked path (0.037 ms median in-process; 99.8 ms median cold deny hook at `v1.2.0`). Rule patterns and Ed25519 signing run locally.
 - **Tamper-evident audit trail**: Each receipt embeds the `prev_hash` and updates a SHA-256 Merkle tree. Changing an earlier log entry breaks the chain that follows.
 
 ---
 
 ## Performance Benchmarks
 
-The summary above is one framing: about 78 ms cold per hooked call, and about 0.02 ms for the in-process policy check. The table is the committed run of `benchmarks/benchmark_overhead.py` in `benchmarks/results.json` at commit 82691be (1,000 samples on Apple Silicon, after Ed25519 signing). Component rows are means from that file. Earlier ~67 ms and 89.1 ms cold-hook figures are superseded.
+Measured on tag `v1.2.0` (commit `144038e`, Apple M4, macOS 27.3, Python 3.11.16) via `python benchmarks/benchmark_overhead.py --iterations 1000 --cold-iterations 100 --tag v1.2.0 --commit 144038ef9984ee63e1abec1edb218a7986e05d49`, stored in [`benchmarks/results.json`](benchmarks/results.json). Prior pre-v1.2.0 figures measured on the 3-rule policy are superseded.
 
-| Operation | Mean Latency | Tail Latency | External Network I/O |
-| :--- | :--- | :--- | :--- |
-| **Rule and policy evaluation** | 0.005 ms | — | None |
-| **Canonical JSON (sorted keys) + Ed25519 signature** | 0.016 ms | — | None |
-| **In-process policy check + signing** | **0.021 ms** | **0.033 ms (p99)** | **0 bytes (local)** |
-| **Cold hooked call (new Python process)** | **77.5 ms** | **82.4 ms (p95)** | **0 bytes (local)** |
+| Operation | Median | p95 | Iterations | External Network I/O |
+| :--- | :--- | :--- | :--- | :--- |
+| **Rule and policy evaluation (preloaded)** | 0.020 ms | 0.026 ms | 1,000 | None |
+| **Canonical JSON + Ed25519 signature** | 0.016 ms | 0.022 ms | 1,000 | None |
+| **In-process policy check + signing** | **0.037 ms** | **0.046 ms** | 1,000 | **0 bytes (local)** |
+| **Cold hooked call — deny (new Python process)** | **99.8 ms** | **148.7 ms** | 100 | **0 bytes (local)** |
+| **Cold hooked call — allow (new Python process)** | **97.7 ms** | **161.3 ms** | 100 | **0 bytes (local)** |
 
 Run it locally: `python3 benchmarks/benchmark_overhead.py`.
 

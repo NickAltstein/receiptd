@@ -1,11 +1,47 @@
 {
+  "measured_tag": "v1.2.0",
+  "measured_commit": "144038ef9984ee63e1abec1edb218a7986e05d49",
+  "receiptd_version": "1.2.0",
+  "machine": "Apple M4",
+  "os": "macOS 27.3 (Darwin 27.3.0 arm64)",
+  "python_version": "3.11.16",
+  "command": "python benchmarks/benchmark_overhead.py --iterations 1000 --cold-iterations 100 --tag v1.2.0 --commit 144038ef9984ee63e1abec1edb218a7986e05d49",
   "n_samples": 1000,
-  "policy_eval_mean_ms": 0.005,
-  "crypto_sign_mean_ms": 0.016,
-  "in_process_total_overhead_mean_ms": 0.021,
-  "in_process_p50_ms": 0.021,
-  "in_process_p95_ms": 0.026,
-  "in_process_p99_ms": 0.033,
-  "cold_process_mean_ms": 77.5,
-  "cold_process_p95_ms": 82.4
+  "cold_n_samples": 100,
+  "policy_eval": {
+    "median_ms": 0.02,
+    "mean_ms": 0.022,
+    "p95_ms": 0.026,
+    "p99_ms": 0.049
+  },
+  "crypto_sign": {
+    "median_ms": 0.016,
+    "mean_ms": 0.018,
+    "p95_ms": 0.022,
+    "p99_ms": 0.04
+  },
+  "in_process_total": {
+    "median_ms": 0.037,
+    "mean_ms": 0.039,
+    "p95_ms": 0.046,
+    "p99_ms": 0.077
+  },
+  "in_process_uncached_policy_load": {
+    "median_ms": 0.107,
+    "mean_ms": 0.115,
+    "p95_ms": 0.154,
+    "p99_ms": 0.254
+  },
+  "cold_process_deny": {
+    "median_ms": 99.8,
+    "mean_ms": 108.2,
+    "p95_ms": 148.7,
+    "p99_ms": 183.0
+  },
+  "cold_process_allow": {
+    "median_ms": 97.7,
+    "mean_ms": 106.6,
+    "p95_ms": 161.3,
+    "p99_ms": 199.8
+  }
 }
