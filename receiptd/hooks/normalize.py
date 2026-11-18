@@ -167,7 +167,8 @@ def normalize_text(
         current = no_backslashes
         trace.append("strip_backslashes")
 
-    collapsed = re.sub(r"\s+", " ", current).strip()
+    collapsed = re.sub(r"[^\S\n]+", " ", current)
+    collapsed = re.sub(r" *\n *", "\n", collapsed).strip()
     if collapsed != current:
         current = collapsed
         trace.append("collapse_whitespace")
@@ -237,7 +238,8 @@ def normalize_path(
         current = sep_fixed
         trace.append("canonicalize_separators")
 
-    collapsed = re.sub(r"\s+", " ", current).strip()
+    collapsed = re.sub(r"[^\S\n]+", " ", current)
+    collapsed = re.sub(r" *\n *", "\n", collapsed).strip()
     if collapsed != current:
         current = collapsed
         trace.append("collapse_whitespace")
@@ -343,3 +345,28 @@ def extract_normalized_paths(
                     _add(cleaned)
 
     return found
+
+
+_SHELL_SEGMENT_RE = re.compile(r"(?:\n+|;|\|\||&&|\|)")
+_SHELL_PIPELINE_RE = re.compile(r"(?:\n+|;|\|\||&&)")
+
+
+def split_shell_lines(command: str) -> list[str]:
+    """Split a Bash command into non-empty lines while preserving line boundaries."""
+    if not isinstance(command, str) or not command.strip():
+        return []
+    return [line.strip() for line in command.splitlines() if line.strip()]
+
+
+def split_shell_pipelines(command: str) -> list[str]:
+    """Split a Bash command on newline, ;, &&, and ||, keeping piped sequences together."""
+    if not isinstance(command, str) or not command.strip():
+        return []
+    return [pipe.strip() for pipe in _SHELL_PIPELINE_RE.split(command) if pipe.strip()]
+
+
+def split_shell_segments(command: str) -> list[str]:
+    """Split a Bash command into atomic segments on newline, ;, &&, ||, and |."""
+    if not isinstance(command, str) or not command.strip():
+        return []
+    return [seg.strip() for seg in _SHELL_SEGMENT_RE.split(command) if seg.strip()]

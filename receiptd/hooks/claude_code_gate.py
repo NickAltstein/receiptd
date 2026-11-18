@@ -7,7 +7,13 @@ Exit 2 -> Tool HARD BLOCKED (fail-closed) + signed rejection receipt emitted.
 """
 from __future__ import annotations
 
-from .normalize import extract_normalized_paths, normalize_tool_input
+from .normalize import (
+    extract_normalized_paths,
+    normalize_tool_input,
+    split_shell_lines,
+    split_shell_pipelines,
+    split_shell_segments,
+)
 from .session_rules import (
     DEFAULT_EXPLOIT_WINDOW_SECONDS,
     DEFAULT_RECON_COUNT,
@@ -545,6 +551,21 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     raw_file_path = tool_input.get("file_path")
     norm_file_path = norm_input.get("file_path")
 
+    is_bash_command = tool_name == "Bash" and isinstance(command, str)
+    raw_segments = split_shell_segments(command) if is_bash_command else []
+    norm_segments = split_shell_segments(norm_command) if (tool_name == "Bash" and isinstance(norm_command, str)) else []
+    raw_pipelines = split_shell_pipelines(command) if is_bash_command else []
+    norm_pipelines = split_shell_pipelines(norm_command) if (tool_name == "Bash" and isinstance(norm_command, str)) else []
+    raw_lines = split_shell_lines(command) if is_bash_command else []
+    norm_lines = split_shell_lines(norm_command) if (tool_name == "Bash" and isinstance(norm_command, str)) else []
+
+    if is_bash_command:
+        raw_payload_segments = [f"{tool_name} {canonicalize_jcs({**tool_input, 'command': seg})}" for seg in raw_segments] or [combined]
+        norm_payload_segments = [f"{tool_name} {canonicalize_jcs({**norm_input, 'command': seg})}" for seg in norm_segments] or [norm_combined]
+    else:
+        raw_payload_segments = []
+        norm_payload_segments = []
+
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
@@ -558,11 +579,24 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
                 or (isinstance(norm_file_path, str) and bool(rule.pattern.search(os.path.normpath(norm_file_path))))
             )
         elif rule.scope == "shell_command":
-            matched = (isinstance(command, str) and bool(rule.pattern.search(command))) or (
-                isinstance(norm_command, str) and bool(rule.pattern.search(norm_command))
-            )
+            if not is_bash_command:
+                matched = False
+            elif rule.id.startswith(("POL-06", "POL-07")):
+                candidates = raw_lines + norm_lines
+                matched = any(bool(rule.pattern.search(item)) for item in candidates)
+            elif rule.id.startswith("POL-01") or r"\|" in rule.pattern.pattern:
+                candidates = raw_pipelines + norm_pipelines
+                matched = any(bool(rule.pattern.search(item)) for item in candidates)
+            else:
+                candidates = raw_segments + norm_segments
+                matched = any(bool(rule.pattern.search(item)) for item in candidates)
         else:
-            matched = bool(rule.pattern.search(combined)) or bool(rule.pattern.search(norm_combined))
+            if is_bash_command:
+                matched = any(bool(rule.pattern.search(item)) for item in raw_payload_segments) or any(
+                    bool(rule.pattern.search(item)) for item in norm_payload_segments
+                )
+            else:
+                matched = bool(rule.pattern.search(combined)) or bool(rule.pattern.search(norm_combined))
         if matched:
             score = min(100, score + rule.weight)
             triggered.append(rule.id)
