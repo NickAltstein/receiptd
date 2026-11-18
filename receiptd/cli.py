@@ -12,6 +12,7 @@ Commands:
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -395,6 +396,52 @@ def pubkey(
 # Command: `birkin verify --ledger` / `birkin verify <package>`
 # ---------------------------------------------------------------------------
 
+def _resolve_pubkey_material(raw_value: str) -> tuple[str | None, str | None]:
+    """Resolve --pubkey or RECEIPTD_PUBLIC_KEY from a file path, PEM text, or 32-byte Base64."""
+    candidate = raw_value.strip()
+    if not candidate:
+        return None, "Error: Empty public key value supplied."
+    if "BEGIN" in candidate:
+        return candidate, None
+
+    try:
+        path = Path(candidate).expanduser()
+        exists = path.exists()
+        is_file = path.is_file()
+    except OSError:
+        exists = False
+        is_file = False
+
+    if is_file:
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            return None, f"Error: Could not read public key file {path}: {exc}"
+        if not content:
+            return None, f"Error: Public key file is empty: {path}"
+        return content, None
+    if exists:
+        return None, f"Error: Public key path is not a file: {path}"
+
+    # Accept 44-char Base64 of a raw 32-byte key even when it contains '/'.
+    try:
+        decoded = base64.b64decode(candidate.encode("ascii"), validate=True)
+        if len(decoded) == 32:
+            return candidate, None
+    except Exception:
+        pass
+
+    looks_like_path = (
+        os.sep in candidate
+        or "/" in candidate
+        or candidate.endswith((".pem", ".pub", ".key"))
+        or candidate.startswith((".", "~"))
+    )
+    if looks_like_path:
+        return None, f"Error: Public key file not found: {candidate}"
+    return candidate, None
+
+
 def _verify_ledger_file(
     ledger_path: Path,
     format_type: str = "table",
@@ -408,6 +455,14 @@ def _verify_ledger_file(
     if snapshot is None and not ledger_path.exists():
         typer.echo(f"Error: Ledger file not found at {ledger_path}", err=True)
         return False
+
+    explicit_pubkey = pubkey or os.environ.get("RECEIPTD_PUBLIC_KEY")
+    resolved_explicit_pubkey: Optional[str] = None
+    if explicit_pubkey is not None:
+        resolved_explicit_pubkey, key_err = _resolve_pubkey_material(explicit_pubkey)
+        if key_err:
+            typer.echo(key_err, err=True)
+            return False
 
     typer.echo(f"Auditing cryptographic ledger: {ledger_path}...\n")
 
@@ -459,14 +514,10 @@ def _verify_ledger_file(
 
     # Resolve public key for verifying Ed25519 signatures
     kd = key_dir or Path(os.environ.get("RECEIPTD_KEY_DIR", Path.home() / ".receiptd"))
-    pubkey_target = pubkey
-    if not pubkey_target:
-        pubkey_target = os.environ.get("RECEIPTD_PUBLIC_KEY")
+    pubkey_target = resolved_explicit_pubkey
     if not pubkey_target:
         try:
             pubkey_target = get_public_key_pem(key_dir=kd)
-        except Exception:
-            pubkey_target = None
         except Exception:
             pubkey_target = None
 
