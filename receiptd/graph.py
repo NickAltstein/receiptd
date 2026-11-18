@@ -82,14 +82,26 @@ def render_graph(snapshot: str, passed: bool, failure: int | None, show_args: bo
                 state = "<strong>unverifiable after break</strong>"
         rules = row.get("rule_ids")
         rule_names = ", ".join(_field(rule, IDENTIFIER) for rule in rules) if isinstance(rules, list) else ""
+        raw_rtype = row.get("receipt_type")
+        rtype_tag = _field(raw_rtype, IDENTIFIER) if isinstance(raw_rtype, str) and raw_rtype else ""
+        if rtype_tag == "Unavailable":
+            rtype_tag = ""
         reason = row.get("reason")
         if decision == "deny":
-            if isinstance(reason, str) and reason in HOOK_REASONS:
+            if rtype_tag and reason == "session denied":
+                reason_text = f"session denied ({rtype_tag}: matched rule {rule_names})" if rule_names else f"session denied ({rtype_tag})"
+            elif rtype_tag and rule_names:
+                reason_text = f"{rtype_tag}: matched rule {rule_names}"
+            elif isinstance(reason, str) and reason in HOOK_REASONS:
                 reason_text = escape(reason)
             elif rule_names:
                 reason_text = f"matched rule {rule_names}"
             else:
                 reason_text = "Reason unavailable"
+        elif rtype_tag and rule_names:
+            reason_text = f"{rtype_tag}: matched rule {rule_names} (receipt-only)"
+        elif rtype_tag:
+            reason_text = f"{rtype_tag} (receipt-only)"
         else:
             reason_text = ""
         args = ""
