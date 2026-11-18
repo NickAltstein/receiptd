@@ -58,5 +58,51 @@
       "scope": "shell_command",
       "pattern": "(?:>{1,2}\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)|\\b(?:cp|mv|install)\\s+[^\\n;&|]*?\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)[\"\\x27]?\\s*(?=[;&|\\n]|$)|\\bcrontab\\s+-(?=\\s*(?:[<;&|]|$))|\\bsystemctl\\s+--user\\s+enable\\b)"
     }
+  ],
+  "fast_chain": {
+    "recon_count": 5,
+    "recon_window_seconds": 30,
+    "exploit_window_seconds": 60,
+    "deny_session": false,
+    "thresholds_note": "recon_count (5), recon_window_seconds (30), and exploit_window_seconds (60) are defaults, not tuned values. deny_session is false (receipt-only) by default.",
+    "webfetch_allowlisted_domains": [
+      "localhost",
+      "127.0.0.1"
+    ],
+    "host_hook_coverage": {
+      "dcode": "Hooks Bash, Write, Edit, MultiEdit, and mcp__*; dcode does not hook Read, Glob, or Grep.",
+      "claude_code": "Default PreToolUse matcher is Bash|Write|Edit|MultiEdit|mcp__.*; Claude Code sends Read, Glob, Grep, or WebFetch only if the matcher includes them."
+    }
+  },
+  "recon_classes": [
+    {
+      "id": "RECON-01:PROTECTED_READ_SEARCH",
+      "tools": ["Read", "Grep", "Glob"],
+      "requires_protected_path": true,
+      "pattern": "(?i)(?:^|[/'\"\\s*])(?:\\.env(?:\\.[^/\\s'\"*]*|\\*)?|\\.aws(?:/|$|\\*)|\\.ssh(?:/|$|\\*)|\\.(?:netrc|npmrc|pypirc|bashrc|zshrc|profile|bash_profile)|\\.kube(?:/|$)|\\.claude/settings(?:\\.local)?\\.json|\\.github/workflows/|\\.git/hooks/|library/launchagents/|launchdaemons/|\\.config/systemd/user/|/etc/(?:passwd|shadow|sudoers)|credentials(?:\\.[^/\\s'\"]+)?)(?:$|[/'\"\\s*])"
+    },
+    {
+      "id": "RECON-02:WEBFETCH_NON_ALLOWLISTED",
+      "tools": ["WebFetch"],
+      "requires_non_allowlisted_domain": true
+    },
+    {
+      "id": "RECON-03:MCP_ENV_ENUMERATION",
+      "tool_prefix": "mcp__",
+      "pattern": "(?i)(?:(?:^|[^a-z0-9])(?:env|environ|getenv|printenv|secret|secrets|credential|credentials|token|tokens|config|settings|inventory|whoami|list_resources|list_files|list_secrets|read_resource|describe_[a-z0-9_]+|get_env)(?:$|[^a-z0-9])|\\.env\\b|\\.ssh\\b|\\.aws\\b|/etc/passwd)"
+    }
+  ],
+  "exploit_classes": [
+    {
+      "id": "EXPLOIT-01:BASH_DENY_OR_PROTECTED_WRITE",
+      "tools": ["Bash"],
+      "matches_policy_deny": true,
+      "protected_write_pattern": "(?i)(?:>{1,2}|\\b(?:tee|cp|mv|install|chmod|chown|rm|ln)\\b)[^\\n;&|]*(?:\\.env(?:\\.[^/\\s'\"]*)?|\\.aws/(?:credentials|config)|\\.ssh/|\\.(?:netrc|npmrc|pypirc|bashrc|zshrc|profile|bash_profile)|\\.kube/config|\\.claude/settings(?:\\.local)?\\.json|\\.github/workflows/|\\.git/hooks/|library/launchagents/|launchdaemons/|\\.config/systemd/user/|/etc/(?:passwd|shadow|sudoers))"
+    },
+    {
+      "id": "EXPLOIT-02:PROTECTED_FILE_WRITE",
+      "tools": ["Write", "Edit", "MultiEdit"],
+      "requires_protected_path": true
+    }
   ]
 }

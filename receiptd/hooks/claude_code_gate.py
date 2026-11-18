@@ -7,6 +7,36 @@ Exit 2 -> Tool HARD BLOCKED (fail-closed) + signed rejection receipt emitted.
 """
 from __future__ import annotations
 
+from .normalize import (
+    extract_normalized_paths,
+    normalize_path,
+    normalize_tool_input,
+    split_shell_lines,
+    split_shell_pipelines,
+    split_shell_segments,
+)
+from .session_rules import (
+    DEFAULT_EXPLOIT_WINDOW_SECONDS,
+    DEFAULT_RECON_COUNT,
+    DEFAULT_RECON_WINDOW_SECONDS,
+    ExploitClassRule,
+    FastChainConfig,
+    FastChainVerdict,
+    RECEIPT_TYPE_ADAPTIVE_RETRY,
+    RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION,
+    RECEIPT_TYPE_FAST_CHAIN,
+    RECEIPT_TYPE_SESSION_DENIED,
+    RULE_FAST_CHAIN,
+    ReconClassRule,
+    classify_recon_call,
+    evaluate_adaptive_retry,
+    evaluate_fast_chain,
+    protected_path_hashes_for_call,
+    read_session_receipts,
+    resolve_adaptive_retry_window,
+    resolve_fast_chain_config,
+)
+
 import hashlib
 import json
 import os
@@ -71,6 +101,8 @@ class HookPolicy:
     base_score: int
     deny_at: int
     rules: tuple[HookRule, ...]
+    fast_chain: FastChainConfig = FastChainConfig()
+    adaptive_retry_window_seconds: int | None = None
 
 
 def default_policy_path() -> Path:
@@ -128,7 +160,126 @@ def parse_policy(data: bytes) -> HookPolicy:
         if scope not in ("payload", "workflow_edit", "write_path", "shell_command"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
-    return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
+
+    fast_chain_cfg = _parse_fast_chain_config(spec)
+    adaptive_window = spec.get("adaptive_retry_window_seconds")
+    if adaptive_window is not None and (isinstance(adaptive_window, bool) or not isinstance(adaptive_window, int) or adaptive_window <= 0):
+        raise ValueError("adaptive_retry_window_seconds must be a positive integer")
+
+    return HookPolicy(
+        base_score=base_score,
+        deny_at=deny_at,
+        rules=tuple(rules),
+        fast_chain=fast_chain_cfg,
+        adaptive_retry_window_seconds=adaptive_window,
+    )
+
+
+def _require_positive_int(value: object, name: str, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _parse_fast_chain_config(spec: dict) -> FastChainConfig:
+    raw_fc = spec.get("fast_chain") or {}
+    if not isinstance(raw_fc, dict):
+        raise ValueError("fast_chain must be an object")
+    recon_count = _require_positive_int(raw_fc.get("recon_count"), "fast_chain.recon_count", DEFAULT_RECON_COUNT)
+    recon_window = _require_positive_int(
+        raw_fc.get("recon_window_seconds"),
+        "fast_chain.recon_window_seconds",
+        DEFAULT_RECON_WINDOW_SECONDS,
+    )
+    exploit_window = _require_positive_int(
+        raw_fc.get("exploit_window_seconds"),
+        "fast_chain.exploit_window_seconds",
+        DEFAULT_EXPLOIT_WINDOW_SECONDS,
+    )
+    deny_session = raw_fc.get("deny_session", False)
+    if not isinstance(deny_session, bool):
+        raise ValueError("fast_chain.deny_session must be a boolean")
+
+    raw_allowlist = raw_fc.get("webfetch_allowlisted_domains", ["localhost", "127.0.0.1"])
+    if not isinstance(raw_allowlist, list) or not all(isinstance(d, str) for d in raw_allowlist):
+        raise ValueError("fast_chain.webfetch_allowlisted_domains must be a list of strings")
+
+    recon_rules: list[ReconClassRule] = []
+    raw_recon = spec.get("recon_classes") or []
+    if not isinstance(raw_recon, list):
+        raise ValueError("recon_classes must be a list")
+    for idx, entry in enumerate(raw_recon):
+        if not isinstance(entry, dict):
+            raise ValueError(f"recon_classes[{idx}] must be an object")
+        rid = entry.get("id")
+        if not isinstance(rid, str) or not rid.strip():
+            raise ValueError(f"recon_classes[{idx}].id must be a non-empty string")
+        tools = entry.get("tools", [])
+        if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+            raise ValueError(f"recon_classes[{idx}].tools must be a list of strings")
+        pat_raw = entry.get("pattern")
+        compiled = None
+        if pat_raw is not None:
+            if not isinstance(pat_raw, str):
+                raise ValueError(f"recon_classes[{idx}].pattern must be a string")
+            try:
+                compiled = re.compile(pat_raw)
+            except re.error as exc:
+                raise ValueError(f"recon_classes[{idx}].pattern is invalid regex") from exc
+        recon_rules.append(
+            ReconClassRule(
+                id=rid,
+                tools=tuple(tools),
+                tool_prefix=str(entry.get("tool_prefix") or ""),
+                requires_protected_path=bool(entry.get("requires_protected_path", False)),
+                requires_non_allowlisted_domain=bool(entry.get("requires_non_allowlisted_domain", False)),
+                pattern=compiled,
+            )
+        )
+
+    exploit_rules: list[ExploitClassRule] = []
+    raw_exploit = spec.get("exploit_classes") or []
+    if not isinstance(raw_exploit, list):
+        raise ValueError("exploit_classes must be a list")
+    for idx, entry in enumerate(raw_exploit):
+        if not isinstance(entry, dict):
+            raise ValueError(f"exploit_classes[{idx}] must be an object")
+        eid = entry.get("id")
+        if not isinstance(eid, str) or not eid.strip():
+            raise ValueError(f"exploit_classes[{idx}].id must be a non-empty string")
+        tools = entry.get("tools", [])
+        if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+            raise ValueError(f"exploit_classes[{idx}].tools must be a list of strings")
+        pat_raw = entry.get("protected_write_pattern")
+        compiled = None
+        if pat_raw is not None:
+            if not isinstance(pat_raw, str):
+                raise ValueError(f"exploit_classes[{idx}].protected_write_pattern must be a string")
+            try:
+                compiled = re.compile(pat_raw)
+            except re.error as exc:
+                raise ValueError(f"exploit_classes[{idx}].protected_write_pattern is invalid regex") from exc
+        exploit_rules.append(
+            ExploitClassRule(
+                id=eid,
+                tools=tuple(tools),
+                matches_policy_deny=bool(entry.get("matches_policy_deny", False)),
+                requires_protected_path=bool(entry.get("requires_protected_path", False)),
+                protected_write_pattern=compiled,
+            )
+        )
+
+    return FastChainConfig(
+        recon_count=recon_count,
+        recon_window_seconds=recon_window,
+        exploit_window_seconds=exploit_window,
+        deny_session=deny_session,
+        webfetch_allowlisted_domains=tuple(raw_allowlist),
+        recon_classes=tuple(recon_rules),
+        exploit_classes=tuple(exploit_rules),
+    )
 
 
 def load_policy_file(path: Path) -> tuple[bytes, HookPolicy]:
@@ -354,8 +505,70 @@ def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern
     return False
 
 
+_DL_CMD_RE = re.compile(r"\b(?:curl|wget|fetch)\b", re.IGNORECASE)
+_DL_OUT_RE = re.compile(
+    r"(?:(?:--output|--output-document|-o|-O)(?:\s+|=)|>{1,2}\s*)([^\s;|&\"']+|\"[^\"]+\"|'[^']+')",
+)
+_CHMOD_EXEC_RE = re.compile(
+    r"\bchmod\s+(?:[augo]*\+x|[0-7]*[1357][0-7]{0,2})\s+([^\n;&|]+)",
+    re.IGNORECASE,
+)
+_EXEC_INTERP_RE = re.compile(
+    r"^(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\.\d+)?)?|perl|ruby|node|source|\.)\s+(?:-[\w-]+\s+)*([^\s;|&]+)",
+    re.IGNORECASE,
+)
+
+
+def _matches_multiline_download_exec(lines: list[str]) -> bool:
+    """Detect download-then-chmod/execute referencing the same explicit path across lines."""
+    if len(lines) < 2:
+        return False
+    downloaded: set[str] = set()
+    for line in lines:
+        if downloaded:
+            for seg in split_shell_segments(line):
+                m_chmod = _CHMOD_EXEC_RE.search(seg)
+                if m_chmod:
+                    for tok in m_chmod.group(1).split():
+                        if tok.startswith("-"):
+                            continue
+                        norm_tok, _ = normalize_path(tok)
+                        if norm_tok in downloaded:
+                            return True
+                m_interp = _EXEC_INTERP_RE.search(seg)
+                if m_interp:
+                    norm_target, _ = normalize_path(m_interp.group(1))
+                    if norm_target in downloaded:
+                        return True
+                parts = seg.split()
+                if parts:
+                    norm_first, _ = normalize_path(parts[0])
+                    if norm_first in downloaded:
+                        return True
+        if _DL_CMD_RE.search(line):
+            for match in _DL_OUT_RE.finditer(line):
+                raw_target = match.group(1).strip("\"'")
+                if not raw_target or raw_target in ("-", "/dev/null"):
+                    continue
+                norm_path_val, _ = normalize_path(raw_target)
+                if norm_path_val:
+                    downloaded.add(norm_path_val)
+    return False
+
+
+def _is_workflow_path(tool_input: dict) -> bool:
+    for key in ("file_path", "path", "target_file"):
+        val = tool_input.get(key)
+        if isinstance(val, str) and ".github/workflows" in val.replace("\\", "/").lower():
+            return True
+    return False
+
+
 def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
-    """Score one tool call with the given policy. The default is the packaged file."""
+    """Score one tool call against raw and lexically normalized inputs."""
+    if not isinstance(payload, dict):
+        return True, 100, ["MISSING_REQUIRED_FIELD"]
+
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
         return True, 100, ["MISSING_REQUIRED_FIELD"]
@@ -372,24 +585,75 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
 
     tool_name = tool_name.strip()
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
-
     command = tool_input.get("command") if tool_name == "Bash" else None
+
+    norm_input, _trace, _norm_hash = normalize_tool_input(tool_name, tool_input)
+    is_workflow = _is_workflow_path(tool_input) or _is_workflow_path(norm_input)
+    if is_workflow:
+        norm_workflow_input = dict(tool_input)
+        for key in ("file_path", "path", "target_file"):
+            if key in norm_input:
+                norm_workflow_input[key] = norm_input[key]
+        norm_combined = f"{tool_name} {canonicalize_jcs(norm_workflow_input)}"
+    else:
+        norm_workflow_input = norm_input
+        norm_combined = f"{tool_name} {canonicalize_jcs(norm_input)}"
+    norm_command = norm_input.get("command") if tool_name == "Bash" else None
+
+    raw_file_path = tool_input.get("file_path")
+    norm_file_path = norm_input.get("file_path")
+
+    is_bash_command = tool_name == "Bash" and isinstance(command, str)
+    raw_segments = split_shell_segments(command) if is_bash_command else []
+    norm_segments = split_shell_segments(norm_command) if (tool_name == "Bash" and isinstance(norm_command, str)) else []
+    raw_pipelines = split_shell_pipelines(command) if is_bash_command else []
+    norm_pipelines = split_shell_pipelines(norm_command) if (tool_name == "Bash" and isinstance(norm_command, str)) else []
+    raw_lines = split_shell_lines(command) if is_bash_command else []
+    norm_lines = split_shell_lines(norm_command) if (tool_name == "Bash" and isinstance(norm_command, str)) else []
+
+    if is_bash_command:
+        raw_payload_segments = [f"{tool_name} {canonicalize_jcs({**tool_input, 'command': seg})}" for seg in raw_segments] or [combined]
+        norm_payload_segments = [f"{tool_name} {canonicalize_jcs({**norm_input, 'command': seg})}" for seg in norm_segments] or [norm_combined]
+    else:
+        raw_payload_segments = []
+        norm_payload_segments = []
+
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
         if rule.scope == "workflow_edit":
             matched = _matches_workflow_edit(tool_name, tool_input, rule.pattern)
+            if not matched and norm_workflow_input != tool_input:
+                matched = _matches_workflow_edit(tool_name, norm_workflow_input, rule.pattern)
         elif rule.scope == "write_path":
-            path = tool_input.get("file_path")
-            matched = (
-                tool_name in ("Write", "Edit", "MultiEdit")
-                and isinstance(path, str)
-                and bool(rule.pattern.search(os.path.normpath(path)))
+            matched = tool_name in ("Write", "Edit", "MultiEdit") and (
+                (isinstance(raw_file_path, str) and bool(rule.pattern.search(os.path.normpath(raw_file_path))))
+                or (isinstance(norm_file_path, str) and bool(rule.pattern.search(os.path.normpath(norm_file_path))))
             )
         elif rule.scope == "shell_command":
-            matched = isinstance(command, str) and bool(rule.pattern.search(command))
+            if not is_bash_command:
+                matched = False
+            elif rule.id.startswith("POL-06"):
+                candidates = raw_lines + norm_lines
+                matched = any(bool(rule.pattern.search(item)) for item in candidates) or (
+                    _matches_multiline_download_exec(raw_lines) or _matches_multiline_download_exec(norm_lines)
+                )
+            elif rule.id.startswith("POL-07"):
+                candidates = raw_lines + norm_lines
+                matched = any(bool(rule.pattern.search(item)) for item in candidates)
+            elif rule.id.startswith("POL-01") or r"\|" in rule.pattern.pattern:
+                candidates = raw_pipelines + norm_pipelines
+                matched = any(bool(rule.pattern.search(item)) for item in candidates)
+            else:
+                candidates = raw_segments + norm_segments
+                matched = any(bool(rule.pattern.search(item)) for item in candidates)
         else:
-            matched = bool(rule.pattern.search(combined))
+            if is_bash_command:
+                matched = any(bool(rule.pattern.search(item)) for item in raw_payload_segments) or any(
+                    bool(rule.pattern.search(item)) for item in norm_payload_segments
+                )
+            else:
+                matched = bool(rule.pattern.search(combined)) or bool(rule.pattern.search(norm_combined))
         if matched:
             score = min(100, score + rule.weight)
             triggered.append(rule.id)
@@ -497,9 +761,16 @@ def _run() -> int:
             except ValueError:
                 pass
 
-        tool_name = str(payload.get("tool_name", ""))
+        tool_name = str(payload.get("tool_name", "")).strip()
         tool_input = payload.get("tool_input", {})
         args_sha256 = sha256_hex(canonical_json(tool_input))
+        norm_input, norm_trace, norm_args_sha256 = normalize_tool_input(tool_name, tool_input)
+        protected_hashes = protected_path_hashes_for_call(tool_name, tool_input)
+        adaptive_window = resolve_adaptive_retry_window(
+            policy.adaptive_retry_window_seconds if policy is not None else None
+        )
+        fast_chain_cfg = resolve_fast_chain_config(policy.fast_chain if policy is not None else None)
+        recon_class = classify_recon_call(tool_name, tool_input, fast_chain_cfg)
         session_id = str(payload.get("session_id") or os.environ.get("RECEIPTD_SESSION_ID", "default"))
         _CTX.update(
             tool_name=tool_name,
@@ -519,15 +790,91 @@ def _run() -> int:
         # Read existing ledger state and write next receipt under exclusive inter-process lock
         with lock_ledger(ledger_path):
             prev_hash, last_cp_hash, receipt_count, last_cp_seq, uncheckpointed = read_ledger_state(ledger_path)
+            now_dt = datetime.now(timezone.utc)
+            now_iso = now_dt.isoformat()
+            session_receipts = read_session_receipts(ledger_path, session_id)
+            retry_verdict = evaluate_adaptive_retry(
+                session_receipts,
+                tool_name=tool_name,
+                normalized_args_sha256=norm_args_sha256,
+                protected_path_hashes=protected_hashes,
+                now=now_dt,
+                window_seconds=adaptive_window,
+            )
+
+            extra_fields: dict = {
+                "tool_input": tool_input,
+                "normalized_args_sha256": norm_args_sha256,
+            }
+            if protected_hashes:
+                extra_fields["protected_path_hashes"] = protected_hashes
+            if recon_class is not None:
+                extra_fields["recon_class"] = recon_class
+
+            if retry_verdict.kind == RECEIPT_TYPE_SESSION_DENIED:
+                blocked = True
+                score = 100
+                decision = "deny"
+                triggered = [retry_verdict.rule_id]
+                reason = retry_verdict.reason or "session denied"
+                extra_fields["receipt_type"] = RECEIPT_TYPE_SESSION_DENIED
+                extra_fields["session_denied"] = True
+                fast_chain_verdict = FastChainVerdict(matched=False)
+            else:
+                if retry_verdict.kind == RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION:
+                    blocked = True
+                    score = 100
+                    decision = "deny"
+                    rule_id = str(retry_verdict.rule_id)
+                    triggered = [rule_id] + [r for r in triggered if r != rule_id]
+                    reason = retry_verdict.reason or f"session denied: matched rule {rule_id}"
+                    extra_fields["receipt_type"] = RECEIPT_TYPE_ADAPTIVE_RETRY_ESCALATION
+                    extra_fields["session_denied"] = True
+                    extra_fields["prior_denied_args_sha256"] = retry_verdict.prior_denied_args_sha256
+                    extra_fields["prior_denied_receipt_hash"] = retry_verdict.prior_denied_receipt_hash
+                    extra_fields["retry_args_sha256"] = norm_args_sha256
+                    extra_fields["normalization_trace"] = norm_trace
+                    if retry_verdict.origin_denied_ts:
+                        extra_fields["origin_denied_ts"] = retry_verdict.origin_denied_ts
+                elif retry_verdict.kind == RECEIPT_TYPE_ADAPTIVE_RETRY:
+                    blocked = True
+                    score = 100
+                    decision = "deny"
+                    rule_id = str(retry_verdict.rule_id)
+                    triggered = [rule_id] + [r for r in triggered if r != rule_id]
+                    reason = retry_verdict.reason or f"matched rule {rule_id}"
+                    extra_fields["receipt_type"] = RECEIPT_TYPE_ADAPTIVE_RETRY
+                    extra_fields["prior_denied_args_sha256"] = retry_verdict.prior_denied_args_sha256
+                    extra_fields["prior_denied_receipt_hash"] = retry_verdict.prior_denied_receipt_hash
+                    extra_fields["retry_args_sha256"] = norm_args_sha256
+                    extra_fields["normalization_trace"] = norm_trace
+                    if retry_verdict.origin_denied_ts:
+                        extra_fields["origin_denied_ts"] = retry_verdict.origin_denied_ts
+
+                fast_chain_verdict = evaluate_fast_chain(
+                    session_receipts,
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    triggered_rules=triggered,
+                    now=now_dt,
+                    config=fast_chain_cfg,
+                )
+
+            if fast_chain_verdict.matched and fast_chain_verdict.deny_session:
+                blocked = True
+                decision = "deny"
+                score = 100
+
             seq = receipt_count + 1
             latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            extra_fields["latency_ms"] = latency_ms
 
             if signing_failed or sk is None:
                 # Signing failure must fail-closed with exit 2 and write an unsigned deny receipt
                 unsigned_receipt = build_unsigned_signing_error_receipt(
                     v=1,
                     seq=seq,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=now_iso,
                     session_id=session_id,
                     tool=tool_name,
                     args_sha256=args_sha256,
@@ -537,7 +884,7 @@ def _run() -> int:
                     reason="receiptd: signing unavailable",
                     policy_sha256=policy_sha256,
                     prev_hash=prev_hash,
-                    extra_fields={"latency_ms": latency_ms, "tool_input": tool_input},
+                    extra_fields=extra_fields,
                 )
                 with _LEDGER_LOCK:
                     append_ledger_entry(ledger_path, unsigned_receipt)
@@ -551,7 +898,7 @@ def _run() -> int:
                 sk=sk,
                 v=1,
                 seq=seq,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=now_iso,
                 session_id=session_id,
                 tool=tool_name,
                 args_sha256=args_sha256,
@@ -561,13 +908,52 @@ def _run() -> int:
                 reason=reason,
                 policy_sha256=policy_sha256,
                 prev_hash=prev_hash,
-                extra_fields={"latency_ms": latency_ms, "tool_input": tool_input},
+                extra_fields=extra_fields,
             )
+
+            fast_chain_receipt: dict | None = None
+            if fast_chain_verdict.matched:
+                fc_decision = "deny" if fast_chain_verdict.deny_session else "allow"
+                fc_blast = 100 if fast_chain_verdict.deny_session else 80
+                fc_extra = {
+                    "receipt_type": RECEIPT_TYPE_FAST_CHAIN,
+                    "exploit_class": fast_chain_verdict.exploit_class,
+                    "recon_seqs": list(fast_chain_verdict.recon_seqs),
+                    "recon_hashes": list(fast_chain_verdict.recon_hashes),
+                    "exploit_receipt_hash": receipt["hash"],
+                    "recon_count": fast_chain_cfg.recon_count,
+                    "recon_window_seconds": fast_chain_cfg.recon_window_seconds,
+                    "exploit_window_seconds": fast_chain_cfg.exploit_window_seconds,
+                    "session_denied": fast_chain_verdict.deny_session,
+                    "normalized_args_sha256": norm_args_sha256,
+                    "latency_ms": latency_ms,
+                }
+                fast_chain_receipt = build_signed_receipt(
+                    sk=sk,
+                    v=1,
+                    seq=seq + 1,
+                    ts=now_iso,
+                    session_id=session_id,
+                    tool=tool_name,
+                    args_sha256=args_sha256,
+                    decision=fc_decision,
+                    rule_ids=[RULE_FAST_CHAIN],
+                    blast_radius=fc_blast,
+                    reason=fast_chain_verdict.reason or f"matched rule {RULE_FAST_CHAIN}",
+                    policy_sha256=policy_sha256,
+                    prev_hash=receipt["hash"],
+                    extra_fields=fc_extra,
+                )
+
             # Receipt, checkpoint, and "finished" go in one locked block so the
             # watchdog sees either nothing written or the whole decision.
             with _LEDGER_LOCK:
+                last_seq = receipt["seq"]
+                last_hash = receipt["hash"]
+                uncheckpointed_hashes = [r["hash"] for r in uncheckpointed] + [receipt["hash"]]
+
                 try:
-                    record_ledger_anchor(receipt["seq"], receipt["hash"], ledger_path=ledger_path, sk=sk)
+                    record_ledger_anchor(last_seq, last_hash, ledger_path=ledger_path, sk=sk)
                 except Exception as exc:
                     sys.stderr.write(f"receiptd: anchor write failed: {exc}\n")
                     _CTX["finished"] = True
@@ -575,15 +961,27 @@ def _run() -> int:
 
                 append_ledger_entry(ledger_path, receipt)
 
+                if fast_chain_receipt is not None:
+                    last_seq = fast_chain_receipt["seq"]
+                    last_hash = fast_chain_receipt["hash"]
+                    try:
+                        record_ledger_anchor(last_seq, last_hash, ledger_path=ledger_path, sk=sk)
+                    except Exception as exc:
+                        sys.stderr.write(f"receiptd: anchor write failed: {exc}\n")
+                        _CTX["finished"] = True
+                        return 2
+                    append_ledger_entry(ledger_path, fast_chain_receipt)
+                    uncheckpointed_hashes.append(fast_chain_receipt["hash"])
+                    if fast_chain_verdict.deny_session and RULE_FAST_CHAIN not in triggered:
+                        triggered = [*triggered, RULE_FAST_CHAIN]
+
                 # Write Merkle checkpoint if interval reached
-                uncheckpointed_hashes = [r["hash"] for r in uncheckpointed] + [receipt["hash"]]
                 if len(uncheckpointed_hashes) >= checkpoint_interval:
                     from_seq = last_cp_seq + 1
-                    to_seq = seq
                     cp = build_signed_checkpoint(
                         sk=sk,
                         from_seq=from_seq,
-                        to_seq=to_seq,
+                        to_seq=last_seq,
                         leaf_hashes=uncheckpointed_hashes,
                         prev_checkpoint_hash=last_cp_hash,
                     )

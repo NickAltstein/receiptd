@@ -1,0 +1,36 @@
+{
+  "schema_version": "receiptd.eval.attestation_sidecar.v1",
+  "target_release_tag": "v1.2.0",
+  "target_release_commit": "144038ef9984ee63e1abec1edb218a7986e05d49",
+  "expected_policy_path": "receiptd/hooks/default_pretooluse.policy.json",
+  "expected_policy_sha256": "8f5901d2a1c88c88bdb0d7d9598050b2a6b9cfa289de5a2851e76a764d163986",
+  "finalized_plan_commit": "839711fdec4e62b551c04d5a13cc5e231b962fcf",
+  "artifacts": {
+    "scoring_plan": {
+      "path": "docs/eval/v1.2-scoring-plan.md",
+      "bytes": 24462,
+      "sha256": "5def5c9e6f128ca421aae8b55866b44a49f80db03a118cb17535508c1babc511",
+      "ots_proof_path": "docs/eval/attestations/v1.2-scoring-plan.md.ots",
+      "ots_status": "pending_bitcoin_confirmation"
+    },
+    "attack_manifest": {
+      "path": "docs/eval/v1.2-attack-manifest.json",
+      "bytes": 47109,
+      "sha256": "24b6ae4c7118a2fe36ce3a5ea7546e2b16a5b786a53aad1dc39a7719a4465f44",
+      "ots_proof_path": "docs/eval/attestations/v1.2-attack-manifest.json.ots",
+      "ots_status": "pending_bitcoin_confirmation"
+    },
+    "benign_sessions_manifest": {
+      "path": "docs/eval/benign-sessions-manifest.json",
+      "bytes": 11960,
+      "sha256": "d117e52b6237ef1b898ab8b38144aa97943316ce8b558104f3cf7352e2b6378c",
+      "ots_proof_path": "docs/eval/attestations/benign-sessions-manifest.json.ots",
+      "ots_status": "pending_bitcoin_confirmation"
+    }
+  },
+  "receiptd_attestation": {
+    "ledger_path": "docs/eval/attestations/plan-attestation-ledger.jsonl",
+    "pubkey_path": "docs/eval/attestations/attestation_ed25519.pub.pem",
+    "note": "Signed using host Ed25519 control-plane key; private key stays outside repo in ~/.receiptd/."
+  }
+}
