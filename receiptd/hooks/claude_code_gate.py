@@ -7,6 +7,8 @@ Exit 2 -> Tool HARD BLOCKED (fail-closed) + signed rejection receipt emitted.
 """
 from __future__ import annotations
 
+from .normalize import extract_normalized_paths, normalize_tool_input
+
 import hashlib
 import json
 import os
@@ -354,8 +356,19 @@ def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern
     return False
 
 
+def _is_workflow_path(tool_input: dict) -> bool:
+    for key in ("file_path", "path", "target_file"):
+        val = tool_input.get(key)
+        if isinstance(val, str) and ".github/workflows" in val.replace("\\", "/").lower():
+            return True
+    return False
+
+
 def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
-    """Score one tool call with the given policy. The default is the packaged file."""
+    """Score one tool call against raw and lexically normalized inputs."""
+    if not isinstance(payload, dict):
+        return True, 100, ["MISSING_REQUIRED_FIELD"]
+
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
         return True, 100, ["MISSING_REQUIRED_FIELD"]
@@ -372,24 +385,42 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
 
     tool_name = tool_name.strip()
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
-
     command = tool_input.get("command") if tool_name == "Bash" else None
+
+    norm_input, _trace, _norm_hash = normalize_tool_input(tool_name, tool_input)
+    is_workflow = _is_workflow_path(tool_input) or _is_workflow_path(norm_input)
+    if is_workflow:
+        norm_workflow_input = dict(tool_input)
+        for key in ("file_path", "path", "target_file"):
+            if key in norm_input:
+                norm_workflow_input[key] = norm_input[key]
+        norm_combined = f"{tool_name} {canonicalize_jcs(norm_workflow_input)}"
+    else:
+        norm_workflow_input = norm_input
+        norm_combined = f"{tool_name} {canonicalize_jcs(norm_input)}"
+    norm_command = norm_input.get("command") if tool_name == "Bash" else None
+
+    raw_file_path = tool_input.get("file_path")
+    norm_file_path = norm_input.get("file_path")
+
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
         if rule.scope == "workflow_edit":
             matched = _matches_workflow_edit(tool_name, tool_input, rule.pattern)
+            if not matched and norm_workflow_input != tool_input:
+                matched = _matches_workflow_edit(tool_name, norm_workflow_input, rule.pattern)
         elif rule.scope == "write_path":
-            path = tool_input.get("file_path")
-            matched = (
-                tool_name in ("Write", "Edit", "MultiEdit")
-                and isinstance(path, str)
-                and bool(rule.pattern.search(os.path.normpath(path)))
+            matched = tool_name in ("Write", "Edit", "MultiEdit") and (
+                (isinstance(raw_file_path, str) and bool(rule.pattern.search(os.path.normpath(raw_file_path))))
+                or (isinstance(norm_file_path, str) and bool(rule.pattern.search(os.path.normpath(norm_file_path))))
             )
         elif rule.scope == "shell_command":
-            matched = isinstance(command, str) and bool(rule.pattern.search(command))
+            matched = (isinstance(command, str) and bool(rule.pattern.search(command))) or (
+                isinstance(norm_command, str) and bool(rule.pattern.search(norm_command))
+            )
         else:
-            matched = bool(rule.pattern.search(combined))
+            matched = bool(rule.pattern.search(combined)) or bool(rule.pattern.search(norm_combined))
         if matched:
             score = min(100, score + rule.weight)
             triggered.append(rule.id)
