@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from .normalize import (
     extract_normalized_paths,
+    normalize_path,
     normalize_tool_input,
     split_shell_lines,
     split_shell_pipelines,
@@ -504,6 +505,57 @@ def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern
     return False
 
 
+_DL_CMD_RE = re.compile(r"\b(?:curl|wget|fetch)\b", re.IGNORECASE)
+_DL_OUT_RE = re.compile(
+    r"(?:(?:--output|--output-document|-o|-O)(?:\s+|=)|>{1,2}\s*)([^\s;|&\"']+|\"[^\"]+\"|'[^']+')",
+)
+_CHMOD_EXEC_RE = re.compile(
+    r"\bchmod\s+(?:[augo]*\+x|[0-7]*[1357][0-7]{0,2})\s+([^\n;&|]+)",
+    re.IGNORECASE,
+)
+_EXEC_INTERP_RE = re.compile(
+    r"^(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\.\d+)?)?|perl|ruby|node|source|\.)\s+(?:-[\w-]+\s+)*([^\s;|&]+)",
+    re.IGNORECASE,
+)
+
+
+def _matches_multiline_download_exec(lines: list[str]) -> bool:
+    """Detect download-then-chmod/execute referencing the same explicit path across lines."""
+    if len(lines) < 2:
+        return False
+    downloaded: set[str] = set()
+    for line in lines:
+        if downloaded:
+            for seg in split_shell_segments(line):
+                m_chmod = _CHMOD_EXEC_RE.search(seg)
+                if m_chmod:
+                    for tok in m_chmod.group(1).split():
+                        if tok.startswith("-"):
+                            continue
+                        norm_tok, _ = normalize_path(tok)
+                        if norm_tok in downloaded:
+                            return True
+                m_interp = _EXEC_INTERP_RE.search(seg)
+                if m_interp:
+                    norm_target, _ = normalize_path(m_interp.group(1))
+                    if norm_target in downloaded:
+                        return True
+                parts = seg.split()
+                if parts:
+                    norm_first, _ = normalize_path(parts[0])
+                    if norm_first in downloaded:
+                        return True
+        if _DL_CMD_RE.search(line):
+            for match in _DL_OUT_RE.finditer(line):
+                raw_target = match.group(1).strip("\"'")
+                if not raw_target or raw_target in ("-", "/dev/null"):
+                    continue
+                norm_path_val, _ = normalize_path(raw_target)
+                if norm_path_val:
+                    downloaded.add(norm_path_val)
+    return False
+
+
 def _is_workflow_path(tool_input: dict) -> bool:
     for key in ("file_path", "path", "target_file"):
         val = tool_input.get(key)
@@ -581,7 +633,12 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
         elif rule.scope == "shell_command":
             if not is_bash_command:
                 matched = False
-            elif rule.id.startswith(("POL-06", "POL-07")):
+            elif rule.id.startswith("POL-06"):
+                candidates = raw_lines + norm_lines
+                matched = any(bool(rule.pattern.search(item)) for item in candidates) or (
+                    _matches_multiline_download_exec(raw_lines) or _matches_multiline_download_exec(norm_lines)
+                )
+            elif rule.id.startswith("POL-07"):
                 candidates = raw_lines + norm_lines
                 matched = any(bool(rule.pattern.search(item)) for item in candidates)
             elif rule.id.startswith("POL-01") or r"\|" in rule.pattern.pattern:
