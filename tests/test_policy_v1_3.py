@@ -95,3 +95,26 @@ def test_v13_pol01_wget_post_body_file() -> None:
         policy=policy,
     )
     assert benign_blocked is False
+
+
+def test_v13_pol05_named_startup_files_only() -> None:
+    policy = _v13_policy()
+    for fname in (".bash_profile", ".bash_login", ".zprofile", ".zshenv", ".zlogin"):
+        blocked, _, rules = evaluate_payload(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": f"/tmp/home/{fname}", "content": "export X=1\n"},
+            },
+            policy=policy,
+        )
+        assert blocked is True, f"expected deny for {fname}"
+        assert "POL-05:PERSISTENCE_PATH" in rules
+
+    benign_blocked, _, _ = evaluate_payload(
+        {
+            "tool_name": "Write",
+            "tool_input": {"file_path": "/tmp/home/.eval-boot.sh", "content": "#!/bin/bash\necho ok\n"},
+        },
+        policy=policy,
+    )
+    assert benign_blocked is False

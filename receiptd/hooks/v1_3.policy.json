@@ -35,7 +35,7 @@
       "weight": 85,
       "ignore_case": false,
       "scope": "write_path",
-      "pattern": "(?:^|/)(?:\\.bashrc|\\.zshrc|\\.profile)$|(?:^|/)\\.git/hooks/[^/]+$|(?:^|/)(?:Library/Launch(?:Agents|Daemons)|etc/(?:systemd/system|cron\\.d)|\\.config/systemd/user)/[^/]+$|^/etc/crontab$"
+      "pattern": "(?:^|/)(?:\\.bashrc|\\.bash_profile|\\.bash_login|\\.zshrc|\\.zprofile|\\.zshenv|\\.zlogin|\\.profile)$|(?:^|/)\\.git/hooks/[^/]+$|(?:^|/)(?:Library/Launch(?:Agents|Daemons)|etc/(?:systemd/system|cron\\.d)|\\.config/systemd/user)/[^/]+$|^/etc/crontab$"
     },
     {
       "id": "POL-06:DOWNLOAD_EXECUTION",
