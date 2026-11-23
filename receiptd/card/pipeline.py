@@ -16,14 +16,23 @@ def analyze_paths(paths, redacted=False, rules=None):
         rules = load_rules()
     sessions = []
     hits = []
+    per_session_hits = []
     for raw in paths:
         path = Path(raw)
         parsed = parse_session_file(path)
         sessions.append(parsed)
-        hits.extend(classify_session(parsed.calls, rules))
+        s_hits = classify_session(parsed.calls, rules)
+        per_session_hits.append(s_hits)
+        hits.extend(s_hits)
     if redacted:
         hits = redact_hits(hits)
-    return build_report(sessions, hits, redacted=redacted, rules=rules)
+    return build_report(
+        sessions,
+        hits,
+        redacted=redacted,
+        rules=rules,
+        session_hits=per_session_hits,
+    )
 
 
 def analyze_last(last_n, redacted=False, rules=None, claude_dir=None, codex_dir=None):

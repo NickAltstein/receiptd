@@ -52,7 +52,7 @@ birkin = "receiptd.cli:cli"
 include = ["receiptd*", "birkin*"]
 
 [tool.setuptools.package-data]
-"receiptd.card" = ["rules.yaml", "demo/*.jsonl"]
+"receiptd.card" = ["rules.yaml", "demo/*.jsonl", "assets/*.png"]
 "receiptd.hooks" = ["default_pretooluse.policy.json"]
 
 [tool.pytest.ini_options]

@@ -88,6 +88,8 @@ class Report:
     ordered: bool = False
     rules_version: str = "0"
     redacted: bool = False
+    session_vector_counts: dict = field(default_factory=lambda: {c: 0 for c in CATEGORIES})
+    trifecta_sessions: int = 0
 
     def top_evidence(self, limit: int = 5) -> list:
         """Deterministic 'top' evidence: PRIVATE first, then UNTRUSTED, then
