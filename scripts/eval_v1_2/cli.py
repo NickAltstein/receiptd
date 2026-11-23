@@ -56,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to private Claude Code sessions root for live benign replay.",
     )
     parser.add_argument(
+        "--allow-system-rapportd",
+        action="store_true",
+        help="Explicit opt-in to allow SIP-protected macOS rapportd during loopback preflight.",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=None,
@@ -82,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
                 work_dir=args.work_dir,
                 receiptd_python=args.receiptd_python,
                 sessions_root=args.sessions_root,
+                allow_system_rapportd=args.allow_system_rapportd,
             )
     except (PinMismatchError, ContainmentPreflightError, ValueError) as exc:
         sys.stderr.write(f"[EVAL RUNNER REFUSED] {exc}\n")
