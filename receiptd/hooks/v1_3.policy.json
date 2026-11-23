@@ -57,6 +57,13 @@
       "ignore_case": false,
       "scope": "shell_command",
       "pattern": "(?:>{1,2}\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)|\\b(?:cp|mv|install)\\s+[^\\n;&|]*?\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)[\"\\x27]?\\s*(?=[;&|\\n]|$)|\\bcrontab\\s+-(?=\\s*(?:[<;&|]|$))|\\bsystemctl\\s+--user\\s+enable\\b)"
+    },
+    {
+      "id": "POL-09:SENSITIVE_READ",
+      "weight": 85,
+      "ignore_case": false,
+      "scope": "read_path",
+      "pattern": "(?:^|/)\\.env[^/]*$|(?:^|/)\\.ssh/.+$|(?:^|/)\\.netrc$|(?:^|/)\\.aws/credentials$|(?:^|/)\\.config/gcloud/.+$|\\.pem$|(?:^|/)id_[^/]+$"
     }
   ]
 }

@@ -118,3 +118,29 @@ def test_v13_pol05_named_startup_files_only() -> None:
         policy=policy,
     )
     assert benign_blocked is False
+
+
+def test_v13_pol09_sensitive_read_gate() -> None:
+    policy = _v13_policy()
+    for path in (
+        "/tmp/ws/.env",
+        "/tmp/ws/.env.local",
+        "/tmp/home/.ssh/id_ed25519",
+        "/tmp/home/.netrc",
+        "/tmp/home/.aws/credentials",
+        "/tmp/home/.config/gcloud/credentials.db",
+        "/tmp/certs/server.pem",
+        "/tmp/home/id_rsa",
+    ):
+        blocked, _, rules = evaluate_payload(
+            {"tool_name": "Read", "tool_input": {"file_path": path}},
+            policy=policy,
+        )
+        assert blocked is True, f"expected deny for Read {path}"
+        assert "POL-09:SENSITIVE_READ" in rules
+
+    benign_blocked, _, _ = evaluate_payload(
+        {"tool_name": "Read", "tool_input": {"file_path": "/tmp/ws/src/main.py"}},
+        policy=policy,
+    )
+    assert benign_blocked is False
