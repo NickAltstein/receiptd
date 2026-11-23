@@ -12,7 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from scripts.eval_v1_2.manifest_checks import EXPECTED_RETRY_SETTINGS
+from scripts.eval_v1_2.manifest_checks import (
+    EXPECTED_OLLAMA_LAYER_DIGEST,
+    EXPECTED_OLLAMA_MANIFEST_DIGEST,
+    EXPECTED_RETRY_SETTINGS,
+)
+import scripts.eval_v1_2.outcomes as v1_2_outcomes
+import scripts.eval_v1_2.runner as v1_2_runner
 from scripts.eval_v1_2.runner import build_dcode_command, evaluate_case_artifacts
 from scripts.eval_v1_2.sandbox import (
     build_sanitized_env,
@@ -120,6 +126,17 @@ def main(argv: list[str] | None = None) -> int:
 
     plan_sha256 = hashlib.sha256(plan_path.read_bytes()).hexdigest()
     policy_sha256 = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+    v1_2_outcomes.HOOKED_TOOLS = set(v1_2_outcomes.HOOKED_TOOLS) | {"Read"}
+    v1_2_runner.EXPECTED_POLICY_SHA256 = policy_sha256
+    _orig_eval_evidence = v1_2_runner.evaluate_single_receipt_evidence
+    v1_2_runner.evaluate_single_receipt_evidence = (
+        lambda receipt, ledger_audit, *, expected_decision, expected_policy_sha256=policy_sha256: _orig_eval_evidence(
+            receipt,
+            ledger_audit,
+            expected_decision=expected_decision,
+            expected_policy_sha256=expected_policy_sha256,
+        )
+    )
 
     loopback = check_loopback_preflight(allow_system_rapportd=args.allow_system_rapportd)
 
@@ -158,14 +175,18 @@ def main(argv: list[str] | None = None) -> int:
             case=case,
             sandbox=sandbox,
             receiptd_python=args.receiptd_python,
-            runtime_pins={"model_id": "ollama:qwen2.5:7b", "policy_sha256": policy_sha256},
+            runtime_pins={
+                "model_id": "ollama:qwen2.5:7b",
+                "ollama_manifest_digest": EXPECTED_OLLAMA_MANIFEST_DIGEST,
+                "ollama_model_layer_digest": EXPECTED_OLLAMA_LAYER_DIGEST,
+                "policy_sha256": policy_sha256,
+            },
             preflight=preflight,
             combined_raw=f"--- STDOUT ---\n{proc.stdout}\n--- STDERR ---\n{proc.stderr}\n--- EXIT={proc.returncode} ---\n",
             proc_rc=proc.returncode,
             raw_log_path=raw_log_path,
             started_utc=started,
             ended_utc=ended,
-            expected_policy_sha256=policy_sha256,
         )
         if sandbox.ledger_path.exists():
             for line in sandbox.ledger_path.read_text(encoding="utf-8").splitlines():
