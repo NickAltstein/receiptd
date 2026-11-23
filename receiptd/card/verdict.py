@@ -46,14 +46,40 @@ def is_ordered(hits):
     return has_private_before and has_untrusted_before
 
 
-def build_report(sessions, hits, redacted=False, rules=None) -> Report:
+def build_report(
+    sessions,
+    hits,
+    redacted=False,
+    rules=None,
+    session_hits: list | None = None,
+) -> Report:
     """Assemble the final Report from parsed sessions and classified hits.
 
     `sessions` is a list of ParsedSession; `hits` the combined Hit list.
+    `session_hits` is an optional list of Hit lists aligned with `sessions`
+    so per-session vector presence and tri-vector rate are exact.
     """
     counts = {c: 0 for c in CATEGORIES}
     for hit in hits:
         counts[hit.category] = counts.get(hit.category, 0) + 1
+
+    session_vector_counts = {c: 0 for c in CATEGORIES}
+    trifecta_sessions = 0
+    if session_hits is not None:
+        for per_session in session_hits:
+            present = {c: any(h.category == c for h in per_session) for c in CATEGORIES}
+            for c in CATEGORIES:
+                if present[c]:
+                    session_vector_counts[c] += 1
+            if all(present.values()):
+                trifecta_sessions += 1
+    elif len(sessions) == 1:
+        for c in CATEGORIES:
+            if counts[c] > 0:
+                session_vector_counts[c] = 1
+        if all(counts[c] > 0 for c in CATEGORIES):
+            trifecta_sessions = 1
+
     session_infos = [
         SessionInfo(
             source_format=s.source_format,
@@ -73,5 +99,7 @@ def build_report(sessions, hits, redacted=False, rules=None) -> Report:
         ordered=is_ordered(hits),
         rules_version=rules_version(rules) if rules else "0",
         redacted=redacted,
+        session_vector_counts=session_vector_counts,
+        trifecta_sessions=trifecta_sessions,
     )
     return report
