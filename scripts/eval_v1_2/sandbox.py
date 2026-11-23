@@ -343,6 +343,7 @@ def list_listening_loopback_ports(
 def check_loopback_preflight(
     *,
     allowed_dcode_ports: tuple[int, ...] | set[int] = (),
+    allow_system_rapportd: bool = False,
     lsof_output: str | None = None,
     log_path: Path | None = None,
     subprocess_runner: Any = subprocess.run,
@@ -359,7 +360,8 @@ def check_loopback_preflight(
         port = entry["port"]
         is_ollama = cmd_lower.startswith("ollama") and port == 11434
         is_dcode = port in allowed_ports and cmd_lower.startswith(("dcode", "langgraph", "python"))
-        if not (is_ollama or is_dcode):
+        is_rapportd = allow_system_rapportd and cmd_lower == "rapportd"
+        if not (is_ollama or is_dcode or is_rapportd):
             disallowed.append(entry)
 
     report = {
@@ -367,6 +369,7 @@ def check_loopback_preflight(
         "listening_loopback_ports": listeners,
         "disallowed_ports": disallowed,
         "allowed_dcode_ports": sorted(allowed_ports),
+        "allow_system_rapportd": allow_system_rapportd,
     }
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)

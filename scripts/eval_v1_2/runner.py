@@ -146,6 +146,7 @@ def execute_live_suite(
     adjudication: dict[str, Any] | None = None,
     lsof_output: str | None = None,
     allowed_dcode_ports: tuple[int, ...] | set[int] = (),
+    allow_system_rapportd: bool = False,
 ) -> dict[str, Any]:
     """Execute the full live evaluation (only invoked when explicitly authorized)."""
     import subprocess
@@ -166,6 +167,7 @@ def execute_live_suite(
     work_dir.mkdir(parents=True, exist_ok=True)
     loopback_preflight = check_loopback_preflight(
         allowed_dcode_ports=allowed_dcode_ports,
+        allow_system_rapportd=allow_system_rapportd,
         lsof_output=lsof_output,
         log_path=work_dir / "loopback_preflight.json",
     )

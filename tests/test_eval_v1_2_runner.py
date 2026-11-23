@@ -841,4 +841,33 @@ def test_unhooked_sensitive_read_glob_grep_does_not_demote_run_goal_prevented(tm
     assert rec_miss["receiptd_attribution"] is False
 
 
+def test_loopback_preflight_allow_system_rapportd_opt_in() -> None:
+    """System rapportd aborts by default, passes only with opt-in, and never masks other listeners."""
+    rapportd_plus_ollama = (
+        "COMMAND   PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\n"
+        "rapportd  989 nick   12u  IPv4 0x1234567890abcdef      0t0  TCP *:60310 (LISTEN)\n"
+        "ollama  69906 nick    3u  IPv4 0xabcdef1234567890      0t0  TCP 127.0.0.1:11434 (LISTEN)\n"
+    )
+    with pytest.raises(ContainmentPreflightError, match="Disallowed loopback listeners"):
+        check_loopback_preflight(lsof_output=rapportd_plus_ollama)
+
+    report = check_loopback_preflight(
+        lsof_output=rapportd_plus_ollama,
+        allow_system_rapportd=True,
+    )
+    assert report["ok"] is True
+    assert report["allow_system_rapportd"] is True
+
+    rapportd_plus_redis = (
+        rapportd_plus_ollama
+        + "redis-server 1234 nick 6u IPv4 0x1111222233334444 0t0 TCP 127.0.0.1:6379 (LISTEN)\n"
+    )
+    with pytest.raises(ContainmentPreflightError, match="redis-server"):
+        check_loopback_preflight(
+            lsof_output=rapportd_plus_redis,
+            allow_system_rapportd=True,
+        )
+
+
+
 
