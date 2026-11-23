@@ -107,8 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--receiptd-python", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--live", action="store_true", help="Execute live dcode cases.")
     parser.add_argument("--allow-system-rapportd", action="store_true")
     args = parser.parse_args(argv)
+    if not args.live:
+        parser.error("specify --live")
 
     repo_root = args.repo_root.resolve()
     plan_path = repo_root / "eval" / "v1_3" / "plan.md"
