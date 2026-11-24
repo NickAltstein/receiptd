@@ -1,8 +1,8 @@
-# v1.5 evaluation plan — approved
+# v1.5 evaluation plan — revised for approval
 
-Status: approved by Nick for the pre-committed v1.5 evaluation. Scoring is
-authorized only under this plan, its pinned artifacts, and the exact SHA-256
-of this committed file supplied to `--execute-approved-plan`.
+Status: revised; no scoring authorized. The prior approved invocation stopped
+during VM harness installation before any model call or case schedule. This
+revision requires fresh approval before scored execution.
 
 ## Models and policy
 
@@ -117,7 +117,7 @@ false-block rate. Do not fabricate a session to fill this input.
 
 ## Execution and scoring contract
 
-### Approved scored path
+### Revised scored path (pending approval)
 
 The host runner accepts `--execute-approved-plan <exact PLAN.md SHA-256>` and
 `--output <new private directory>`. It refuses while `PINS.json` has
@@ -128,14 +128,21 @@ Lima template, with zero host mounts. The VM installs receiptd from those
 committed bytes into a fresh venv and installs exact harness versions:
 `deepagents-code==0.2.9`, `deepagents==0.7.39`, and
 `langchain-ollama==1.1.0`. It records the source commit and installed versions.
-The Ubuntu 24.04 VM uses its system Python 3.12; the earlier Python 3.14.9
-baseline was the host development environment.
+The Ubuntu 24.04 image's system Python 3.12 is used only to bootstrap
+`uv==0.13.7`. The VM then installs managed CPython `3.14.9` and creates the
+evaluation venv with that exact interpreter. `deepagents-code==0.2.9`
+requires Python `>=3.14,<3.15`; the first approved invocation could not
+install it under the image's Python 3.12. The failed, unscored VM and private
+setup log are preserved. No case was scheduled and no scored ledger exists
+from that invocation.
 
 An SSH reverse tunnel exposes the host's loopback Ollama API only on VM
 loopback. Before any prompt, the VM checks the served Ollama version and both
 model digests against the pins; any mismatch aborts. Outbound traffic from the
 agent is blocked except VM loopback and established SSH traffic. TCP requests
-to RFC 5737 documentation ranges are redirected to a local synthetic sink.
+to RFC 5737 documentation ranges are redirected to a local synthetic sink;
+the output filter allows the redirected port only when conntrack confirms
+that the original destination was one of those three documentation ranges.
 The disposable fixture also includes decoy credential files, a Git repository,
 cron, and an inert locally built Docker image. No host credentials or sessions
 are copied to the VM.
@@ -252,8 +259,8 @@ Approved bad-result thresholds:
 - [x] Detail the live Claude Code smoke fixture and probes.
 - [x] State latency boundaries and bad-result thresholds.
 - [x] Pin gate implementation files (`claude_code_gate.py`, `shell_analysis.py`, `session_controls.py`, `sensitive_paths.py`).
-- [x] Nick's final approval of this revised plan (scoring executes ONLY after explicit approval).
+- [ ] Nick's final approval of this revised plan (scoring executes ONLY after explicit approval).
 
-Nick approved this revision before scored execution. Use the committed
-PLAN.md hash as the execution token; the runner verifies it and all pins
-before any scored pass.
+No scoring is authorized by this revision. Record fresh approval and flip
+`scoring_authorized` in a later commit, then use that committed PLAN.md hash
+as the execution token.

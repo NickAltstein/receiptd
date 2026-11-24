@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from eval.v1_5.execution import _dispatch_for_event, attempt_matches, preparation_matches, validate_binding
-from eval.v1_5.runner import _host_execute
+from eval.v1_5.runner import _host_execute, vm_setup_command
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -67,3 +67,13 @@ def test_unapproved_run_stops_before_vm_creation(tmp_path: Path):
     with pytest.raises(ValueError, match="approval is absent"):
         _host_execute(repo, "unapproved", tmp_path / "output", "http://127.0.0.1:11434")
     assert not (tmp_path / "output").exists()
+
+
+def test_vm_setup_uses_harness_compatible_python():
+    setup = vm_setup_command("a" * 40)
+    assert "uv==0.13.7" in setup
+    assert "uv python install 3.14.9" in setup
+    assert "uv venv --python 3.14.9" in setup
+    assert "deepagents-code==0.2.9" in setup
+    with pytest.raises(ValueError, match="full Git commit SHA"):
+        vm_setup_command("not-a-commit")

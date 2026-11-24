@@ -1,8 +1,8 @@
 # v1.5 observable and grading contract
 
-Case execution is governed by the approved `PLAN.md` and `PINS.json`.
-This document defines shared grading behavior for the pinned bindings,
-runner and grader.
+No case execution is authorized under the current revision. This document
+defines shared grading behavior; the pinned bindings, runner and grader still
+require Nick's final approval through `PLAN.md` and `PINS.json`.
 
 ## Required case bindings before finalization
 

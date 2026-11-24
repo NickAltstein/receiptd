@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,8 @@ from eval.v1_5.execution import collect_grade, fixture_snapshot, validate_bindin
 SEED = 42
 CASE_TIMEOUT_SECONDS = 300
 MAX_TURNS = 8
+VM_PYTHON_VERSION = "3.14.9"
+VM_UV_VERSION = "0.13.7"
 HOOK_MATCHER = "Bash|Write|Edit|MultiEdit|Read|mcp__.*"
 VM_ROOT = "/tmp/receiptd-v1-5"
 VM_OLLAMA_URL = "http://127.0.0.1:11434"
@@ -207,6 +210,8 @@ def _vm_worker(repo_root: Path, output: Path, ollama_url: str) -> int:
     verify_artifact_pins(repo_root)
     model_pins = verify_ollama_pins(ollama_url)
     versions = {name: version(name) for name in ("receiptd", "deepagents-code", "deepagents", "langchain-ollama")}
+    if sys.version.split()[0] != VM_PYTHON_VERSION:
+        raise ValueError(f"VM Python mismatch: expected {VM_PYTHON_VERSION}, got {sys.version.split()[0]}")
     required_versions = {"deepagents-code": "0.2.9", "deepagents": "0.7.39", "langchain-ollama": "1.1.0"}
     for name, expected in required_versions.items():
         if versions[name] != expected:
@@ -229,7 +234,8 @@ def _vm_worker(repo_root: Path, output: Path, ollama_url: str) -> int:
     schedule = output / "schedule.jsonl"
     report_rows = output / "case-results.jsonl"
     run_info = {"commit": (repo_root / "EVAL_COMMIT").read_text().strip(),
-                "installed_versions": versions,
+                "installed_versions": versions, "python_version": sys.version.split()[0],
+                "uv_version": _checked([f"{VM_ROOT}/bootstrap/bin/uv", "--version"]).strip(),
                 "model_pins": model_pins, "seed": SEED, "temperature": 0,
                 "max_retries": 0, "case_timeout_seconds": CASE_TIMEOUT_SECONDS,
                 "max_turns": MAX_TURNS, "vm_template_sha256": sha256_file(repo_root / "eval/v1_5/lima-vm.yaml")}
@@ -339,6 +345,28 @@ def _vm_worker(repo_root: Path, output: Path, ollama_url: str) -> int:
     return 0
 
 
+def vm_setup_command(commit: str) -> str:
+    """Build the VM bootstrap command; no scored case runs in this phase."""
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("expected a full Git commit SHA")
+    return (
+        f"set -eu; mkdir -p {VM_ROOT}/repo; "
+        f"tar -xf /tmp/receiptd-v15-repo.tar -C {VM_ROOT}/repo; "
+        f"printf '%s\\n' {commit} > {VM_ROOT}/repo/EVAL_COMMIT; "
+        f"python3 -m venv {VM_ROOT}/bootstrap; "
+        f"{VM_ROOT}/bootstrap/bin/python -m pip install --disable-pip-version-check 'uv=={VM_UV_VERSION}'; "
+        f"{VM_ROOT}/bootstrap/bin/uv python install {VM_PYTHON_VERSION}; "
+        f"{VM_ROOT}/bootstrap/bin/uv venv --python {VM_PYTHON_VERSION} {VM_ROOT}/venv; "
+        f"{VM_ROOT}/bootstrap/bin/uv pip install --python {VM_ROOT}/venv/bin/python "
+        f"{VM_ROOT}/repo 'deepagents-code==0.2.9' 'deepagents==0.7.39' "
+        f"'langchain-ollama==1.1.0'; "
+        f"mkdir -p {VM_ROOT}/image; cp /bin/busybox {VM_ROOT}/image/busybox; "
+        f"printf 'FROM scratch\\nCOPY busybox /busybox\\nCMD [\"/busybox\",\"true\"]\\n' "
+        f"> {VM_ROOT}/image/Dockerfile; "
+        f"docker build -q -t receiptd-fixture:latest {VM_ROOT}/image"
+    )
+
+
 def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str) -> int:
     """Ship committed bytes to a fresh pinned Lima VM and collect private output."""
     pins = json.loads((repo_root / "eval/v1_5/PINS.json").read_text())
@@ -372,19 +400,7 @@ def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str)
         _checked(["limactl", "start", "--name", vm_name,
                   str(repo_root / "eval/v1_5/lima-vm.yaml")], timeout=900)
         _checked(["limactl", "copy", str(archive), f"{vm_name}:/tmp/receiptd-v15-repo.tar"], timeout=300)
-        setup = (
-            f"set -eu; mkdir -p {VM_ROOT}/repo; "
-            f"tar -xf /tmp/receiptd-v15-repo.tar -C {VM_ROOT}/repo; "
-            f"printf '%s\\n' {commit} > {VM_ROOT}/repo/EVAL_COMMIT; "
-            f"python3 -m venv {VM_ROOT}/venv; "
-            f"{VM_ROOT}/venv/bin/python -m pip install --disable-pip-version-check "
-            f"{VM_ROOT}/repo 'deepagents-code==0.2.9' 'deepagents==0.7.39' "
-            f"'langchain-ollama==1.1.0'; "
-            f"mkdir -p {VM_ROOT}/image; cp /bin/busybox {VM_ROOT}/image/busybox; "
-            f"printf 'FROM scratch\\nCOPY busybox /busybox\\nCMD [\"/busybox\",\"true\"]\\n' "
-            f"> {VM_ROOT}/image/Dockerfile; "
-            f"docker build -q -t receiptd-fixture:latest {VM_ROOT}/image"
-        )
+        setup = vm_setup_command(commit)
         _checked(["limactl", "shell", "--tty=false", vm_name, "sh", "-lc", setup], timeout=1800)
         ssh_config = Path.home() / ".lima" / vm_name / "ssh.config"
         tunnel = subprocess.Popen(["ssh", "-F", str(ssh_config),
@@ -398,6 +414,9 @@ def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str)
                     "sudo -n iptables -t nat -A OUTPUT -d 192.0.2.0/24 -p tcp -j REDIRECT --to-ports 18080; "
                     "sudo -n iptables -t nat -A OUTPUT -d 198.51.100.0/24 -p tcp -j REDIRECT --to-ports 18080; "
                     "sudo -n iptables -t nat -A OUTPUT -d 203.0.113.0/24 -p tcp -j REDIRECT --to-ports 18080; "
+                    "sudo -n iptables -A OUTPUT -p tcp --dport 18080 -m conntrack --ctorigdst 192.0.2.0/24 -j ACCEPT; "
+                    "sudo -n iptables -A OUTPUT -p tcp --dport 18080 -m conntrack --ctorigdst 198.51.100.0/24 -j ACCEPT; "
+                    "sudo -n iptables -A OUTPUT -p tcp --dport 18080 -m conntrack --ctorigdst 203.0.113.0/24 -j ACCEPT; "
                     "sudo -n iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; "
                     "sudo -n iptables -A OUTPUT -o lo -j ACCEPT; "
                     "sudo -n iptables -P OUTPUT DROP")
