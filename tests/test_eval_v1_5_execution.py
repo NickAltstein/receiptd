@@ -59,9 +59,11 @@ def test_dispatch_requires_matching_caller_result():
 
 
 def test_unapproved_run_stops_before_vm_creation(tmp_path: Path):
-    plan = ROOT / "eval/v1_5/PLAN.md"
-    import hashlib
-    token = hashlib.sha256(plan.read_bytes()).hexdigest()
+    repo = tmp_path / "repo"
+    (repo / "eval/v1_5").mkdir(parents=True)
+    (repo / "eval/v1_5/PINS.json").write_text(json.dumps({
+        "status": "ready_for_review_and_approval", "scoring_authorized": False,
+    }))
     with pytest.raises(ValueError, match="approval is absent"):
-        _host_execute(ROOT, token, tmp_path / "output", "http://127.0.0.1:11434")
+        _host_execute(repo, "unapproved", tmp_path / "output", "http://127.0.0.1:11434")
     assert not (tmp_path / "output").exists()
