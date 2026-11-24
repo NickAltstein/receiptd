@@ -21,12 +21,13 @@ from pathlib import Path
 
 import yaml
 
-from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell
+from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell, matches_self_protection
 
 from ..crypto import (
     SigningKey,
     canonical_json,
     get_signing_key,
+    get_key_dir,
 )
 from ..ledger import (
     GENESIS_HASH,
@@ -128,7 +129,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command", "persistence_action", "remote_shell"):
+        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command", "persistence_action", "remote_shell", "self_protection"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -383,7 +384,7 @@ def normalize_shell_command(command: str) -> str:
     return text
 
 
-def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
+def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = ()) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
@@ -404,19 +405,24 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
 
     command = tool_input.get("command") if tool_name == "Bash" else None
     inspection_rules = [rule.id for rule in policy.rules
-                        if rule.scope in ("persistence_action", "remote_shell")]
+                        if rule.scope in ("persistence_action", "remote_shell", "self_protection")]
     if isinstance(command, str) and len(command) > MAX_TEXT and inspection_rules:
         return True, 100, inspection_rules
     norm_command = normalize_shell_command(command) if isinstance(command, str) else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.scope in ("persistence_action", "remote_shell"):
+        if rule.scope in ("persistence_action", "remote_shell", "self_protection"):
             try:
-                if rule.scope == "persistence_action":
+                if rule.scope in ("persistence_action", "self_protection"):
                     cwd = payload.get("cwd")
                     workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
-                    matched = matches_persistence(command, tool_name, tool_input, workspace)
+                    if rule.scope == "self_protection":
+                        paths = protected_paths + (default_policy_path(), get_key_dir(),
+                            workspace / ".receiptd", workspace / ".birkin")
+                        matched = matches_self_protection(command, tool_name, tool_input, workspace, paths)
+                    else:
+                        matched = matches_persistence(command, tool_name, tool_input, workspace)
                 else:
                     matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern)
             except (OSError, ValueError, RuntimeError, configparser.Error):
@@ -531,7 +537,10 @@ def _run() -> int:
             reason = policy_error.reason
             sys.stderr.write(f"[RECEIPTD FAIL-CLOSED] {policy_error}\n")
         else:
-            blocked, score, triggered = evaluate_payload(payload, policy)
+            blocked, score, triggered = evaluate_payload(payload, policy, protected_paths=(
+                policy_path_from_argv(sys.argv).resolve(),
+                Path(_CTX["ledger_path"]).resolve().parent,
+            ))
             decision = "deny" if blocked else "allow"
             reason = f"triggered rules: {', '.join(triggered)}" if blocked else "allowed"
 

@@ -12,7 +12,7 @@ MAX_TEXT = 65536
 MAX_DEPTH = 8
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 BREAKS = {";", "&&", "||", "|", "&", "(", ")"}
-MUTATORS = {"chmod", "chown", "ln", "cp", "mv", "install", "tee", "touch", "truncate", "mkdir", "rm"}
+MUTATORS = {"chmod", "chown", "ln", "cp", "mv", "install", "tee", "touch", "truncate", "mkdir", "rm", "sed", "perl"}
 
 
 def _tokens(text: str) -> list[str]:
@@ -311,11 +311,12 @@ def matches_remote_shell(command: str, pattern: re.Pattern[str]) -> bool:
     return False
 
 
-def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path) -> bool:
-    hooks_root = configured_hooks_root(cwd)
+def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path, path_check=None) -> bool:
+    hooks_root = configured_hooks_root(cwd) if path_check is None else None
+    check = path_check or persistence_path
     if tool in {"Write", "Edit", "MultiEdit"}:
         path = args.get("file_path")
-        return isinstance(path, str) and persistence_path(path, cwd, hooks_root)
+        return isinstance(path, str) and check(path, cwd, hooks_root)
     if command is None:
         return False
     active_cwd = cwd
@@ -327,7 +328,7 @@ def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path) -
         name = Path(words[0]).name
         if name == "cd" and len(words) == 2:
             active_cwd = (active_cwd / words[1]).resolve()
-            active_hooks = configured_hooks_root(active_cwd)
+            active_hooks = configured_hooks_root(active_cwd) if path_check is None else None
             continue
         # Honor an explicit hooksPath setting in the same payload.
         joined = " ".join(words)
@@ -336,12 +337,16 @@ def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path) -
             active_hooks = (active_cwd / setting[1]).resolve()
         for i, word in enumerate(words[:-1]):
             if re.fullmatch(r"(?:[<>]+&?|&>>?)", word) and ">" in word:
-                if persistence_path(words[i + 1], active_cwd, active_hooks):
+                if check(words[i + 1], active_cwd, active_hooks):
                     return True
-        if name == "crontab" and not any(w in {"-l", "--list"} for w in words[1:]):
+        if path_check is None and name == "crontab" and not any(w in {"-l", "--list"} for w in words[1:]):
             return True
-        if name == "systemctl" and "--user" in words and any(w in {"enable", "link", "edit", "add-wants", "add-requires"} for w in words):
+        if path_check is None and name == "systemctl" and "--user" in words and any(w in {"enable", "link", "edit", "add-wants", "add-requires"} for w in words):
             return True
+        if name == "sed" and not any(w == "--in-place" or w.startswith("--in-place=") or w.startswith("-i") for w in words[1:]):
+            continue
+        if name == "perl" and not any(w.startswith("-") and "i" in w for w in words[1:]):
+            continue
         if name not in MUTATORS:
             continue
         plain = []
@@ -356,7 +361,7 @@ def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path) -
             i += 1
         operands = [w for w in plain if not w.startswith("-")]
         if name in {"cp", "mv", "ln", "install"}:
-            targets = operands[-1:]
+            targets = operands if name in {"mv", "ln"} else operands[-1:]
             for i, word in enumerate(words[1:], 1):
                 if word in {"-t", "--target-directory"} and i + 1 < len(words):
                     targets.append(words[i + 1])
@@ -364,6 +369,21 @@ def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path) -
                     targets.append(word.partition("=")[2])
         else:
             targets = operands
-        if any(persistence_path(p, active_cwd, active_hooks) for p in targets):
+        if any(check(p, active_cwd, active_hooks) for p in targets):
             return True
     return False
+
+
+def matches_self_protection(command, tool, args, cwd, protected):
+    """Deny mutations of gate configuration and evidence paths."""
+    roots = tuple((cwd / path).resolve() for path in protected)
+    def check(raw, active_cwd, unused):
+        path = Path(_expand(raw, {"HOME": os.environ.get("HOME", "/home/user")}))
+        lexical = Path(os.path.abspath(active_cwd / path))
+        for candidate in (lexical, lexical.resolve()):
+            if any(candidate == root or root in candidate.parents or candidate in root.parents for root in roots):
+                return True
+            if candidate.name == ".claude" or (candidate.parent.name == ".claude" and candidate.name.startswith("settings")):
+                return True
+        return False
+    return matches_persistence(command, tool, args, cwd, path_check=check)
