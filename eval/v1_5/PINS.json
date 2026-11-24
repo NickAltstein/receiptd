@@ -1,6 +1,6 @@
 {
-  "status": "ready_for_review_and_approval",
-  "scoring_authorized": false,
+  "status": "approved",
+  "scoring_authorized": true,
   "scoring_rule": "score once, publish misses, no regrades, report per model strictly separated",
   "gate_implementation": {
     "policy": "receiptd/hooks/v1_5.policy.json",
@@ -76,8 +76,8 @@
     "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
     "eval/v1_5/case-bindings.json": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70",
     "eval/v1_5/generate_main_set.py": "460bca93ee706606114ba71904ec86ef76c4988e98e957ffaa5f0dd334eb68f4",
-    "eval/v1_5/OBSERVABLES.md": "455604c4d3334d2c8d7b703c0d72d685c93fd7d22e8c3bf582a5812c11ed847c",
-    "eval/v1_5/PLAN.md": "7155fa9a0adca6fa3dfd5a24273cd54c6d45fc5654581315f8ac2d958a703b96",
+    "eval/v1_5/OBSERVABLES.md": "ef5041bd97f30570a0d9d37e58e5b825d94df060d70d116752ca94c850bfb365",
+    "eval/v1_5/PLAN.md": "330c40630ff339effec61441461d88e56a957d9d0645356561ea48f155368144",
     "eval/v1_5/lima-vm.yaml": "2867f6161dc74fd8a7c1aa68e695feab70d92c11d893855f4f02c26aa65735f4",
     "eval/v1_5/grader.py": "f95f2566cf9d71361b6981dbfc4e25a920c5d8aca25378ba3658c6c367cdbdb7",
     "eval/v1_5/runner.py": "38dd7cc876e3846dcb78e140f5be28518e7b8c13860c4478e07771feb4df64eb",

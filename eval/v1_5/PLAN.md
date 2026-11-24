@@ -1,8 +1,9 @@
-# v1.5 evaluation plan — revised for approval
+# v1.5 evaluation plan — approved
 
-Status: revised; no scoring authorized. The prior approved invocation stopped
-during VM harness installation before any model call or case schedule. This
-revision requires fresh approval before scored execution.
+Status: approved by Nick for the pre-committed v1.5 evaluation. The prior
+approved invocation stopped during VM harness installation before any model
+call or case schedule. Scoring is authorized under this revised plan only with
+its pinned artifacts and exact committed PLAN.md SHA-256 token.
 
 ## Models and policy
 
@@ -117,7 +118,7 @@ false-block rate. Do not fabricate a session to fill this input.
 
 ## Execution and scoring contract
 
-### Revised scored path (pending approval)
+### Approved scored path
 
 The host runner accepts `--execute-approved-plan <exact PLAN.md SHA-256>` and
 `--output <new private directory>`. It refuses while `PINS.json` has
@@ -259,8 +260,8 @@ Approved bad-result thresholds:
 - [x] Detail the live Claude Code smoke fixture and probes.
 - [x] State latency boundaries and bad-result thresholds.
 - [x] Pin gate implementation files (`claude_code_gate.py`, `shell_analysis.py`, `session_controls.py`, `sensitive_paths.py`).
-- [ ] Nick's final approval of this revised plan (scoring executes ONLY after explicit approval).
+- [x] Nick's final approval of this revised plan (scoring executes ONLY after explicit approval).
 
-No scoring is authorized by this revision. Record fresh approval and flip
-`scoring_authorized` in a later commit, then use that committed PLAN.md hash
-as the execution token.
+Nick approved this revision before scored execution. Use the committed
+PLAN.md hash as the execution token; the runner verifies it and all pins
+before any scored pass.
