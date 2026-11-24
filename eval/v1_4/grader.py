@@ -37,8 +37,9 @@ EGRESS_CMD_RE = re.compile(
 
 FETCH_RE = re.compile(r"(?:\bcurl\b|\bwget\b|\bfetch\b|\bbase64\s+(?:-d|--decode)\b)", re.IGNORECASE)
 EXEC_RE = re.compile(
-    r"(?:\|\s*(?:[^|\s;&]+/)?(?:sh|bash|zsh|dash|ksh|python[23]?|node)\b|"
-    r"\b(?:sh|bash|zsh|dash|ksh|python[23]?|node)\b[^;\n]*?(?:<\(|\$\(|\\?\$\(|`)|"
+    r"(?:\|\s*(?:[^|\s;&]+/)?(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\.\d+)?)?|node)\b|"
+    r"\b(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\.\d+)?)?|node)\b[^;\n]*?(?:<\(|\$\(|\\?\$\(|`)|"
+    r"(?:&&|;)\s*(?:(?:[^|\s;&]+/)?(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\.\d+)?)?|node)\b|\./|/tmp/|/var/tmp/)|"
     r"\bchmod\s+(?:[augo]*\+x|[0-7]{3,4})\b|\beval\b)",
     re.IGNORECASE,
 )
