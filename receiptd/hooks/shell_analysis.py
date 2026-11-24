@@ -139,6 +139,7 @@ def command_views(command: str) -> list[list[str]]:
         if text in seen:
             return
         seen.add(text)
+        source = text
         text = _substitutions(_ansi_quotes(text))
         words = _tokens(text)
         segments: list[list[str]] = [[]]
@@ -161,7 +162,7 @@ def command_views(command: str) -> list[list[str]]:
             segment = [_expand(w, variables) for w in segment]
             result.append(segment)
             exposed = _unwrap(segment)
-            if exposed != segment and exposed:
+            if exposed != segment and exposed and Path(segment[0]).name != "eval":
                 result.append(exposed)
             if not exposed:
                 continue
@@ -171,7 +172,7 @@ def command_views(command: str) -> list[list[str]]:
                     if arg.startswith("-") and "c" in arg and i + 1 < len(exposed):
                         visit(exposed[i + 1], depth + 1)
                         break
-            if Path(segment[0]).name in {"eval", "exec"}:
+            if Path(segment[0]).name == "eval":
                 visit(" ".join(exposed), depth + 1)
             if name == "base64" and any(a in {"-d", "--decode", "-D"} for a in exposed[1:]):
                 if index > 0 and index + 1 < len(segments):
@@ -188,6 +189,7 @@ def command_views(command: str) -> list[list[str]]:
         # treating their stdout as an executable value.
         for body in re.findall(r"\$\(([^()]*)\)|`([^`]*)`", text):
             visit(body[0] or body[1], depth + 1)
+        seen.remove(source)
 
     visit(command, 0)
     return result

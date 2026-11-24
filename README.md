@@ -40,7 +40,7 @@ Receiptd is a fail-closed gate for hooked AI agent tool calls.
 
 **A fail-closed gate for hooked AI agent tool calls, with Ed25519-signed receipts and offline hash-chain checking.**
 
-The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, and MCP tools (`mcp__.*`). `Read`, `WebFetch`, `Grep`, `Glob`, and any other tool that does not match that pattern pass ungated. At `v1.2.0` (`144038e`), a cold hooked call takes 99.8 ms median (148.7 ms p95) on deny and 97.7 ms median (161.3 ms p95) on allow; the in-process policy check + signing takes 0.037 ms median (0.046 ms p95).
+The Claude Code PreToolUse hook matches `Bash`, `Write`, `Edit`, `MultiEdit`, `Read`, and MCP tools (`mcp__.*`). `WebFetch`, `Grep`, `Glob`, and any other tool that does not match that pattern pass ungated. At `v1.2.0` (`144038e`), a cold hooked call takes 99.8 ms median (148.7 ms p95) on deny and 97.7 ms median (161.3 ms p95) on allow; the in-process policy check + signing takes 0.037 ms median (0.046 ms p95).
 
 LLM judge prompts are probabilistic and add a model call to each decision. Receiptd uses fixed rules instead. The Stop hook blocks a completion while tests fail, and gives up after 3 retries with a signed `gave_up` receipt. Every hooked tool call emits an Ed25519-signed receipt you can check offline.
 
@@ -327,3 +327,12 @@ receiptd/
 ## License
 
 MIT © [Nick Altstein](https://github.com/NickAltstein)
+
+### Optional v1.5 session controls
+
+The candidate hook accepts `--scope scope.json` in its configured command. The
+file binds an expected `session_id`, optional `allowed_hosts` and
+`allowed_path_roots`, and optional `max_tool_calls` / `max_egress_commands`.
+These are static checks over hooked calls, not OS containment. See
+[scope format and limits](docs/dev/v1_5-phase3.md) and
+[hook coverage](docs/dev/v1_5-hook-coverage.md).

@@ -78,6 +78,13 @@
       "ignore_case": false,
       "scope": "self_protection",
       "pattern": ".*"
+    },
+    {
+      "id": "POL-15:SUPPLY_CHAIN",
+      "weight": 100,
+      "ignore_case": false,
+      "scope": "supply_chain",
+      "pattern": ".*"
     }
   ]
 }
