@@ -48,7 +48,7 @@ receiptd verify-card card.json
 
 ## What this does not protect against
 
-- Tools outside the configured matcher, including `Read`, and activity such as prompts and approvals that does not reach PreToolUse.
+- Reads outside the sensitive list (`.env*`, `.ssh/*`, `.netrc`, `.aws/credentials`, `.config/gcloud/*`, `*.pem`, `id_*`) remain ungated; anything outside receiptd's hooks (such as `WebFetch`, `Grep`, `Glob`, direct subprocesses, or activity that does not reach PreToolUse) stays outside receiptd's hooks.
 - Obfuscation and command behavior the policy rules cannot observe.
 - Workflow checking compares protected keys visible in edit snippets. Comment-only and descriptive edits can pass. Whole-file workflow writes compare protected YAML values against the current file. The rule denies when the current file cannot be read or the comparison cannot be made. New workflow files are intentionally denied because there is no current file to compare. To allow them for a repository, copy the default policy to a repo-local JSON file, remove `POL-04:WORKFLOW_PROTECTED_KEYS`, and run `receiptd init --claude-code --policy-path path/to/policy.json` in that repository. This disables the workflow-key rule for that repository.
 - Tool calls outside Claude Code's installed hook path.

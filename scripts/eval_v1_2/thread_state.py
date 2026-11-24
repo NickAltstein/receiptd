@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -65,8 +66,22 @@ def is_sensitive_path(path_value: str) -> bool:
     return any(marker in lower for marker in SENSITIVE_PATH_MARKERS)
 
 
-def _extract_unhooked_from_transcript_data(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collect ordered Read/Glob/Grep records from inspect_sessions JSON output."""
+def _is_tool_hooked(tool_name: str, matcher: str | None) -> bool:
+    if not matcher:
+        return False
+    return bool(re.fullmatch(matcher, tool_name))
+
+
+def _extract_unhooked_from_transcript_data(
+    data: dict[str, Any],
+    *,
+    matcher: str | None = None,
+) -> list[dict[str, Any]]:
+    """Collect ordered unhooked Read/Glob/Grep records from inspect_sessions JSON output.
+
+    When `matcher` is provided and matches a normalized tool name (e.g. `Read`),
+    those calls are treated as hooked and omitted from `unhooked_tool_calls`.
+    """
     found: list[dict[str, Any]] = []
     messages: list[dict[str, Any]] = []
     for m in data.get("preamble", []) or []:
@@ -86,6 +101,8 @@ def _extract_unhooked_from_transcript_data(data: dict[str, Any]) -> list[dict[st
             mapped = UNHOOKED_TRACE_TOOLS.get(raw_name)
             if mapped is None:
                 continue
+            if _is_tool_hooked(mapped, matcher):
+                continue
             args = tc.get("args")
             args_dict = args if isinstance(args, dict) else {}
             path_val = extract_tool_path(mapped, args_dict)
@@ -101,7 +118,11 @@ def _extract_unhooked_from_transcript_data(data: dict[str, Any]) -> list[dict[st
     return found
 
 
-def _read_plain_json_sqlite(db_path: Path) -> tuple[bool, list[dict[str, Any]], str]:
+def _read_plain_json_sqlite(
+    db_path: Path,
+    *,
+    matcher: str | None = None,
+) -> tuple[bool, list[dict[str, Any]], str]:
     """Read plain-JSON checkpoints/writes rows directly when stored without msgpack."""
     conn = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -134,7 +155,10 @@ def _read_plain_json_sqlite(db_path: Path) -> tuple[bool, list[dict[str, Any]], 
         messages = channel_values.get("messages", [])
         if not isinstance(messages, list):
             return False, [], "malformed messages list in JSON checkpoint"
-        extracted = _extract_unhooked_from_transcript_data({"turns": [{"messages": messages}]})
+        extracted = _extract_unhooked_from_transcript_data(
+            {"turns": [{"messages": messages}]},
+            matcher=matcher,
+        )
         return True, extracted, ""
     except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
         return False, [], f"failed reading sqlite checkpoints: {exc}"
@@ -145,11 +169,12 @@ def _read_plain_json_sqlite(db_path: Path) -> tuple[bool, list[dict[str, Any]], 
 def read_dcode_thread_calls(
     sandbox_home: Path,
     *,
+    matcher: str | None = None,
     dcode_python: Path = DEFAULT_DCODE_PYTHON,
     inspect_script: Path = DEFAULT_INSPECT_SCRIPT,
     subprocess_runner: Any = subprocess.run,
 ) -> dict[str, Any]:
-    """Read dcode sessions.db strictly read-only and return Read/Glob/Grep calls with paths."""
+    """Read dcode sessions.db strictly read-only and return unhooked Read/Glob/Grep calls."""
     state_dir = sandbox_home / ".deepagents" / ".state"
     db_path = state_dir / "sessions.db"
 
@@ -163,7 +188,7 @@ def read_dcode_thread_calls(
         }
 
     # First check if plain-JSON sqlite rows exist (for unit tests without langgraph runtime).
-    plain_ok, plain_calls, plain_err = _read_plain_json_sqlite(db_path)
+    plain_ok, plain_calls, plain_err = _read_plain_json_sqlite(db_path, matcher=matcher)
     if plain_ok:
         return {
             "readable": True,
@@ -252,7 +277,7 @@ def read_dcode_thread_calls(
             "error": f"invalid transcript JSON from sessions.db: {exc}",
         }
 
-    unhooked_calls = _extract_unhooked_from_transcript_data(tx_data)
+    unhooked_calls = _extract_unhooked_from_transcript_data(tx_data, matcher=matcher)
     return {
         "readable": True,
         "db_path": str(db_path),

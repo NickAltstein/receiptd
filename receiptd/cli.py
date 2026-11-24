@@ -106,7 +106,7 @@ def version() -> None:
 INIT_LEDGER_PATH = ".receiptd/receipts.jsonl"
 LEGACY_LEDGER_PATH = ".birkin/receipts.jsonl"
 INIT_POLICY_PATH = ".receiptd/pretooluse.policy.json"
-PRETOOLUSE_MATCHER = "Bash|Write|Edit|MultiEdit|mcp__.*"
+PRETOOLUSE_MATCHER = "Bash|Write|Edit|MultiEdit|Read|mcp__.*"
 # Seconds. Must stay above the gate's internal deadline
 # (RECEIPTD_HOOK_DEADLINE_MS, default 5000) so the gate denies before
 # Claude Code's timeout lets the call through.
