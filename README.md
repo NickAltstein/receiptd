@@ -4,6 +4,25 @@
 
 # Receiptd
 
+
+### Opt in to the v1.5 candidate
+
+The persistence and remote-shell changes on `feat/v1-5` require the candidate
+policy; the packaged default retains its historical bytes. From this branch's
+repo root, install the branch and wire a project policy explicitly:
+
+```sh
+python -m pip install -e .
+mkdir -p .receiptd
+cp receiptd/hooks/v1_5.policy.json .receiptd/v1_5.policy.json
+receiptd init --claude-code --policy-path .receiptd/v1_5.policy.json
+```
+
+The v1.5 evaluation must pin this policy file and its SHA-256, rather than use
+the unchanged default. See [candidate scope and limits](docs/dev/v1_5-phase1.md).
+Conditional git-config includes currently cause a deny when the candidate
+cannot resolve the effective hook roots, including during ordinary coding.
+
 Receiptd is a fail-closed gate for hooked AI agent tool calls.
 
 [![Live Sandbox](https://img.shields.io/badge/LIVE_DEMO-Blast--Radius_Simulator-38BDF8?style=flat-square)](https://sandbox.auditgpt.ai)

@@ -52,3 +52,16 @@ signed deny receipt, policy hash and hash chain. Fixture commands are not run.
 
 Test counts and the candidate policy digest are recorded in the companion
 `v1_5-phase1-checks.txt`, with the exact commit checked. No scoring was run.
+
+
+## Evaluation preparation requirements
+
+No v1.5 plan or benign-session set exists in this branch yet. Before a scored
+run, the plan must pin `receiptd/hooks/v1_5.policy.json` and its SHA-256 (updated
+if Phase 2 changes the candidate). It must not silently select the default.
+
+The benign set must include a real, privately retained session that touches git
+configuration, including conditional includes, so conservative denials are
+measured. Freeze its selection and hashes before scoring; publish counts only.
+The existing synthetic unit test is not a substitute for that real session.
+Do not call historical, unlabeled denials a false-block rate.
