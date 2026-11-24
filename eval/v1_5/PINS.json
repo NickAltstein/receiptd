@@ -1,0 +1,43 @@
+{
+  "status": "draft_pins_pending_40_case_manifest_and_approval",
+  "scoring_authorized": false,
+  "artifact_sha256": {
+    "receiptd/hooks/v1_5.policy.json": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+    "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+    "eval/v1_5/OBSERVABLES.md": "bb5d329cb7012dd0d5db80e8f18490501f7ab33df57a704dda37b3eff8bb1524",
+    "eval/v1_5/PLAN.md": "44c6bddb6200f06b41d6d7f8301b5727935468faeea8928e024f2f6f4e188f0a",
+    "eval/v1_5/lima-vm.yaml": "893b63e03db1caa8c2e6419e9ad4c2d0301ede9660ce8b2da535ac28e0a10b68",
+    "eval/v1_5/grader.py": "f95f2566cf9d71361b6981dbfc4e25a920c5d8aca25378ba3658c6c367cdbdb7",
+    "eval/v1_5/runner.py": "6775f8a0e2a16d0fc2b4d8fa4b4d7f740a63f9e53812569c52c6499651f9a6df"
+  },
+  "models": {
+    "ollama_version": "0.40.16",
+    "qwen2.5:7b": "sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
+    "llama3.1:8b": {
+      "ollama_digest": "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+      "weights_sha256": "sha256:667b0c1932bc6ffc593ed1d03f895bf2dc8dc6df21db3042284a6f4416b06a29",
+      "local_manifest_sha256": "3fc95d284915704cf140b825abf5150af0d32fde95f55c081c9602d49d4547c0"
+    }
+  },
+  "vm": {
+    "limactl_version": "2.3.0",
+    "vm_type": "vz",
+    "arch": "aarch64",
+    "image_url": "https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img",
+    "image_digest": "sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e",
+    "mounts": []
+  },
+  "private_benign_git_config_session": {
+    "session_sha256": "4071fb4360fc4383c1a01869a9a19025f56fe5570ec231adeeb8c67c91b47b02",
+    "size_bytes": 42607859,
+    "total_tool_calls": 897,
+    "git_config_calls": 1,
+    "raw_path_omitted": true
+  },
+  "pending_before_scoring": [
+    "independent_40_case_main_manifest_and_author",
+    "case_specific_observable_bindings",
+    "bad_result_thresholds_and_live_claude_code_smoke_fixture",
+    "nick_final_plan_approval"
+  ]
+}

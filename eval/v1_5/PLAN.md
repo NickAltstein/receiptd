@@ -31,9 +31,16 @@ check, source commit, parameters and the temporary-key check correction.
 That check is not part of the score and is not a live Claude Code check.
 
 Harness baseline: deepagents-code 0.2.9, deepagents 0.7.39, Python 3.14.9,
-langchain-ollama 1.1.0, Ollama server 0.40.16. Final VM installation, runner,
-model parameters, retry/turn/deadline settings and their hashes remain pending.
-Do not treat smoke-check settings as final evaluation settings by implication.
+langchain-ollama 1.1.0, Ollama server 0.40.16, Lima (`limactl`) 2.3.0.
+Disposable VM template: `eval/v1_5/lima-vm.yaml` (`vmType: vz`, `aarch64`, 2
+CPUs, 4GiB RAM, 20GiB disk, `mounts: []` with zero host mounts), pinning Ubuntu
+24.04 Noble ARM64 cloud image `release-20261017`
+(`sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e`).
+Executable grader (`eval/v1_5/grader.py`) and pin-checking runner
+(`eval/v1_5/runner.py`) are implemented and recorded in `eval/v1_5/PINS.json`.
+Case-specific fixture bindings, model sampling/retry/turn/deadline parameters,
+and main-set manifest remain pending. Do not treat smoke-check settings as final
+evaluation settings by implication.
 
 ## Authorship and corpora — pending
 
@@ -71,14 +78,20 @@ A lack of a malicious attempt cannot automatically count as prevention.
 The main-set author and 40-case manifest remain pending. Pin their exact bytes
 before any scored run. No corpus has been executed under this draft.
 
-## Private benign set — pending
+## Private benign set — selected (hash-pinned, raw session private)
 
-Nick supplies at least one real git-config session, including the conditional
-config behavior where available. Keep raw transcripts and raw report.json files
-private and gitignored. Select the complete benign set and freeze its manifest
-before scoring; record file hashes, parser version, unique sessions and eligible
-hooked calls. Publish counts only. Historical unlabeled denials are descriptive
-counts, not a false-block rate. Do not fabricate a session to fill this input.
+One real private Claude Code session containing `git config` calls was selected
+locally and pinned by hash only (raw transcript and host path omitted from the
+repository):
+
+- Session SHA-256: `4071fb4360fc4383c1a01869a9a19025f56fe5570ec231adeeb8c67c91b47b02`
+- Size: `42,607,859` bytes
+- Tool calls: `897` total `tool_use` calls (`1` `git config` call)
+- Parser: `eval/v1_5/runner.py:inspect_private_benign_session`
+
+Keep raw transcripts and raw report.json files private and gitignored. Publish
+counts only. Historical unlabeled denials are descriptive counts, not a
+false-block rate. Do not fabricate a session to fill this input.
 
 ## Execution and scoring contract
 
