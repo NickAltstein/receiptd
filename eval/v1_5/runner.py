@@ -20,11 +20,23 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+PINNED_STATIC_FILES: dict[str, str] = {
+    "receiptd/hooks/v1_5.policy.json": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+    "receiptd/hooks/claude_code_gate.py": "544b8df2c6037328800dd33468aa90a6f2e73e96b68e447764dc3526b5bdbd30",
+    "receiptd/hooks/shell_analysis.py": "1aca64cb9f074b71cd2f3e24d57d26a831afcc1e5f3f2ecdd9ad2dd6cad5c751",
+    "receiptd/hooks/session_controls.py": "552e656c1b2f627128fa7166f0e4f0bf5081377bbed8aff1ddb3ecaa4d268e0c",
+    "receiptd/hooks/sensitive_paths.py": "bb52c2e983da1bcd93109ad38ef04311e6b2f151c7784d284fd9f5a01a66be3b",
+    "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+    "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+    "eval/v1_5/case-bindings.json": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70",
+    "eval/v1_5/generate_main_set.py": "460bca93ee706606114ba71904ec86ef76c4988e98e957ffaa5f0dd334eb68f4",
+}
+
 PINNED_POLICY_REL = "receiptd/hooks/v1_5.policy.json"
-PINNED_POLICY_SHA256 = "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1"
+PINNED_POLICY_SHA256 = PINNED_STATIC_FILES[PINNED_POLICY_REL]
 
 PINNED_EXPOSED_CASES_REL = "eval/v1_5/externally-supplied-cases.json"
-PINNED_EXPOSED_CASES_SHA256 = "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680"
+PINNED_EXPOSED_CASES_SHA256 = PINNED_STATIC_FILES[PINNED_EXPOSED_CASES_REL]
 
 PINNED_OLLAMA_VERSION = "0.40.16"
 PINNED_MODEL_DIGESTS: dict[str, str] = {
@@ -47,13 +59,9 @@ def sha256_file(path: Path) -> str:
 
 
 def verify_static_pins(repo_root: Path) -> dict[str, str]:
-    """Verify immutable v1.5 policy and supplied-cases hashes."""
-    checks = {
-        PINNED_POLICY_REL: PINNED_POLICY_SHA256,
-        PINNED_EXPOSED_CASES_REL: PINNED_EXPOSED_CASES_SHA256,
-    }
+    """Verify immutable v1.5 policy, gate implementation, and supplied-cases hashes."""
     actuals: dict[str, str] = {}
-    for rel, expected in checks.items():
+    for rel, expected in PINNED_STATIC_FILES.items():
         p = repo_root / rel
         if not p.is_file():
             raise ValueError(f"missing pinned file: {rel}")
@@ -94,17 +102,23 @@ def verify_ollama_pins(
     return {"ollama_version": version, "model_digests": matched}
 
 
-def validate_case_bindings(manifest: dict[str, Any]) -> list[str]:
+def validate_case_bindings(
+    bindings_data: dict[str, Any],
+    expected_case_ids: set[str],
+) -> list[str]:
     """Return list of missing mechanical bindings blocking execution."""
     missing: list[str] = []
-    for case in manifest.get("cases", []):
-        cid = str(case.get("id") or "<unknown>")
-        bindings = case.get("observables")
-        if not isinstance(bindings, dict):
-            missing.append(f"{cid}:missing_observables_block")
+    main_cases = bindings_data.get("main_cases", {})
+    exposed_cases = bindings_data.get("externally_supplied_cases", {})
+    all_bound = {**main_cases, **exposed_cases}
+
+    for cid in expected_case_ids:
+        b = all_bound.get(cid)
+        if not isinstance(b, dict):
+            missing.append(f"{cid}:missing_binding_entry")
             continue
         for key in REQUIRED_CASE_BINDINGS:
-            val = bindings.get(key)
+            val = b.get(key)
             if val is None or val == "":
                 missing.append(f"{cid}:missing_{key}")
     return missing
@@ -236,13 +250,16 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     exposed = json.loads((repo_root / PINNED_EXPOSED_CASES_REL).read_text(encoding="utf-8"))
-    missing_exposed = validate_case_bindings(exposed)
-    if missing_exposed:
+    main_manifest = json.loads((repo_root / "eval/v1_5/main-attack-manifest.json").read_text(encoding="utf-8"))
+    bindings_data = json.loads((repo_root / "eval/v1_5/case-bindings.json").read_text(encoding="utf-8"))
+    expected_ids = {c["id"] for c in main_manifest["cases"]} | {c["id"] for c in exposed["cases"]}
+    missing_bindings = validate_case_bindings(bindings_data, expected_ids)
+    if missing_bindings:
         raise SystemExit(
-            f"refusing execution: missing observable bindings ({len(missing_exposed)} items)"
+            f"refusing execution: missing observable bindings ({len(missing_bindings)} items)"
         )
 
-    raise SystemExit("main 40-case manifest not yet pinned; execution blocked")
+    raise SystemExit("No scoring authorized; waiting for Nick's final plan approval")
 
 
 if __name__ == "__main__":

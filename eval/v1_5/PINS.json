@@ -1,16 +1,55 @@
 {
-  "status": "draft_pins_pending_40_case_manifest_and_approval",
+  "status": "ready_for_review_and_approval",
   "scoring_authorized": false,
-  "artifact_sha256": {
-    "receiptd/hooks/v1_5.policy.json": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
-    "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
-    "eval/v1_5/OBSERVABLES.md": "bb5d329cb7012dd0d5db80e8f18490501f7ab33df57a704dda37b3eff8bb1524",
-    "eval/v1_5/PLAN.md": "44c6bddb6200f06b41d6d7f8301b5727935468faeea8928e024f2f6f4e188f0a",
-    "eval/v1_5/lima-vm.yaml": "893b63e03db1caa8c2e6419e9ad4c2d0301ede9660ce8b2da535ac28e0a10b68",
-    "eval/v1_5/grader.py": "f95f2566cf9d71361b6981dbfc4e25a920c5d8aca25378ba3658c6c367cdbdb7",
-    "eval/v1_5/runner.py": "6775f8a0e2a16d0fc2b4d8fa4b4d7f740a63f9e53812569c52c6499651f9a6df"
+  "scoring_rule": "score once, publish misses, no regrades, report per model strictly separated",
+  "gate_implementation": {
+    "policy": "receiptd/hooks/v1_5.policy.json",
+    "policy_sha256": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+    "gate_script": "receiptd/hooks/claude_code_gate.py",
+    "gate_script_sha256": "544b8df2c6037328800dd33468aa90a6f2e73e96b68e447764dc3526b5bdbd30",
+    "shell_analysis": "receiptd/hooks/shell_analysis.py",
+    "shell_analysis_sha256": "1aca64cb9f074b71cd2f3e24d57d26a831afcc1e5f3f2ecdd9ad2dd6cad5c751",
+    "session_controls": "receiptd/hooks/session_controls.py",
+    "session_controls_sha256": "552e656c1b2f627128fa7166f0e4f0bf5081377bbed8aff1ddb3ecaa4d268e0c",
+    "sensitive_paths": "receiptd/hooks/sensitive_paths.py",
+    "sensitive_paths_sha256": "bb52c2e983da1bcd93109ad38ef04311e6b2f151c7784d284fd9f5a01a66be3b"
   },
-  "models": {
+  "corpora": {
+    "main_set": {
+      "path": "eval/v1_5/main-attack-manifest.json",
+      "sha256": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+      "cases": 40,
+      "cases_per_category": 8,
+      "authorship": {
+        "type": "isolated_non_fix_author_generator",
+        "generator_model": "mistral:7b",
+        "generator_model_digest": "sha256:6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf",
+        "authorship_label": "independently generated cases under a documented isolation contract, without claiming human authorship"
+      }
+    },
+    "externally_supplied_set": {
+      "path": "eval/v1_5/externally-supplied-cases.json",
+      "sha256": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+      "cases": 10,
+      "authorship_label": "externally supplied, policy-author-exposed evaluation cases",
+      "corrections": [
+        "HO-03",
+        "HO-10"
+      ]
+    },
+    "case_bindings": {
+      "path": "eval/v1_5/case-bindings.json",
+      "sha256": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70"
+    }
+  },
+  "private_benign_set": {
+    "session_sha256": "4071fb4360fc4383c1a01869a9a19025f56fe5570ec231adeeb8c67c91b47b02",
+    "size_bytes": 42607859,
+    "total_tool_calls": 897,
+    "git_config_calls": 1,
+    "raw_path_omitted": true
+  },
+  "evaluated_models": {
     "ollama_version": "0.40.16",
     "qwen2.5:7b": "sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
     "llama3.1:8b": {
@@ -27,17 +66,20 @@
     "image_digest": "sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e",
     "mounts": []
   },
-  "private_benign_git_config_session": {
-    "session_sha256": "4071fb4360fc4383c1a01869a9a19025f56fe5570ec231adeeb8c67c91b47b02",
-    "size_bytes": 42607859,
-    "total_tool_calls": 897,
-    "git_config_calls": 1,
-    "raw_path_omitted": true
-  },
-  "pending_before_scoring": [
-    "independent_40_case_main_manifest_and_author",
-    "case_specific_observable_bindings",
-    "bad_result_thresholds_and_live_claude_code_smoke_fixture",
-    "nick_final_plan_approval"
-  ]
+  "all_artifact_sha256": {
+    "receiptd/hooks/v1_5.policy.json": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+    "receiptd/hooks/claude_code_gate.py": "544b8df2c6037328800dd33468aa90a6f2e73e96b68e447764dc3526b5bdbd30",
+    "receiptd/hooks/shell_analysis.py": "1aca64cb9f074b71cd2f3e24d57d26a831afcc1e5f3f2ecdd9ad2dd6cad5c751",
+    "receiptd/hooks/session_controls.py": "552e656c1b2f627128fa7166f0e4f0bf5081377bbed8aff1ddb3ecaa4d268e0c",
+    "receiptd/hooks/sensitive_paths.py": "bb52c2e983da1bcd93109ad38ef04311e6b2f151c7784d284fd9f5a01a66be3b",
+    "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+    "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+    "eval/v1_5/case-bindings.json": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70",
+    "eval/v1_5/generate_main_set.py": "460bca93ee706606114ba71904ec86ef76c4988e98e957ffaa5f0dd334eb68f4",
+    "eval/v1_5/OBSERVABLES.md": "bb5d329cb7012dd0d5db80e8f18490501f7ab33df57a704dda37b3eff8bb1524",
+    "eval/v1_5/PLAN.md": "5137ea4ff61337f9d49b8a037c12f46b8611d4d13fd8df37ac4c60e85afd3ac0",
+    "eval/v1_5/lima-vm.yaml": "893b63e03db1caa8c2e6419e9ad4c2d0301ede9660ce8b2da535ac28e0a10b68",
+    "eval/v1_5/grader.py": "f95f2566cf9d71361b6981dbfc4e25a920c5d8aca25378ba3658c6c367cdbdb7",
+    "eval/v1_5/runner.py": "b4b88dde6b43e07bc529a3d1d5d2e6bf15409301ef16e7a63111bb2e4554b4d3"
+  }
 }

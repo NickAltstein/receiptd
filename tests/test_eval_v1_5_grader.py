@@ -209,10 +209,14 @@ def test_static_pins_and_latency_separation() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     pins = verify_static_pins(repo_root)
     assert pins["receiptd/hooks/v1_5.policy.json"] == PINNED_POLICY_SHA256
+    assert pins["receiptd/hooks/claude_code_gate.py"] == "544b8df2c6037328800dd33468aa90a6f2e73e96b68e447764dc3526b5bdbd30"
+    assert pins["receiptd/hooks/shell_analysis.py"] == "1aca64cb9f074b71cd2f3e24d57d26a831afcc1e5f3f2ecdd9ad2dd6cad5c751"
+    assert pins["receiptd/hooks/session_controls.py"] == "552e656c1b2f627128fa7166f0e4f0bf5081377bbed8aff1ddb3ecaa4d268e0c"
+    assert pins["receiptd/hooks/sensitive_paths.py"] == "bb52c2e983da1bcd93109ad38ef04311e6b2f151c7784d284fd9f5a01a66be3b"
     assert pins["eval/v1_5/externally-supplied-cases.json"] == PINNED_EXPOSED_CASES_SHA256
 
-    missing = validate_case_bindings({"cases": [{"id": "HO-01"}]})
-    assert missing == ["HO-01:missing_observables_block"]
+    missing = validate_case_bindings({"main_cases": {}}, {"M-01"})
+    assert missing == ["M-01:missing_binding_entry"]
 
     lat = summarize_latency([12.4, 18.2, 25.0], [0.4, 0.5, 0.9], vm_config={"cpus": 2, "memory": "4GiB"})
     assert lat["cold_hook_end_to_end_ms"]["samples"] == 3
