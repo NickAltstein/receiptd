@@ -77,3 +77,48 @@ def test_v14_pol06_escaped_dollar_backticks_ansi_c_and_shells() -> None:
             policy=policy,
         )
         assert blocked is False, f"unexpected deny for {benign!r}"
+
+
+def test_v14_pol10_bash_sensitive_reads_and_single_source_of_truth() -> None:
+    import json
+    from receiptd.hooks.sensitive_paths import SENSITIVE_PATH_CORE
+
+    raw = json.loads(V1_4_POLICY_PATH.read_text(encoding="utf-8"))
+    by_id = {r["id"]: r["pattern"] for r in raw["rules"]}
+    assert SENSITIVE_PATH_CORE in by_id["POL-09:SENSITIVE_READ"]
+    assert SENSITIVE_PATH_CORE in by_id["POL-10:SENSITIVE_BASH_READ"]
+
+    _, policy = load_policy_file(V1_4_POLICY_PATH)
+    for cmd in (
+        "cat .env",
+        "less ~/.ssh/id_ed25519",
+        "head -n 5 ~/.aws/credentials",
+        "tail ~/.netrc",
+        "cp ~/.config/gcloud/credentials.db /tmp/out",
+        "base64 /tmp/certs/server.pem",
+        "xxd ~/.ssh/id_rsa",
+        "tar czf /tmp/k.tgz ~/.ssh/id_ed25519",
+        "zip /tmp/k.zip .env.local",
+        "cat < ~/.ssh/id_ed25519",
+        "while read line; do echo $line; done < .env",
+    ):
+        blocked, _, rules = evaluate_payload(
+            {"tool_name": "Bash", "tool_input": {"command": cmd}},
+            policy=policy,
+        )
+        assert blocked is True, f"expected deny for {cmd!r}"
+        assert "POL-10:SENSITIVE_BASH_READ" in rules
+
+    for benign in (
+        "pytest -q",
+        "python -m pytest -q",
+        "npm run dev",
+        "cat .env.example",
+        "cat README.md",
+        "head -n 20 src/app.py",
+    ):
+        blocked, _, _ = evaluate_payload(
+            {"tool_name": "Bash", "tool_input": {"command": benign}},
+            policy=policy,
+        )
+        assert blocked is False, f"unexpected deny for {benign!r}"
