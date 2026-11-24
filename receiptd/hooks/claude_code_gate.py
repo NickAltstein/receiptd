@@ -354,6 +354,32 @@ def _matches_workflow_edit(tool_name: str, tool_input: dict, pattern: re.Pattern
     return False
 
 
+def _normalize_path(raw: str) -> str:
+    """Resolve ~ and $HOME/${HOME} and normalize path separators."""
+    expanded = raw.replace("${HOME}", os.environ.get("HOME", "/home/user"))
+    expanded = expanded.replace("$HOME", os.environ.get("HOME", "/home/user"))
+    if expanded == "~" or expanded.startswith("~/"):
+        expanded = os.environ.get("HOME", "/home/user") + expanded[1:]
+    return os.path.normpath(expanded)
+
+
+def normalize_shell_command(command: str) -> str:
+    """Normalize shell command to defeat whitespace, quote-concat, and ~/$HOME evasion."""
+    home = os.environ.get("HOME", "/home/user")
+    text = command
+    # Collapse horizontal whitespace
+    text = re.sub(r"[ \t]+", " ", text).strip()
+    # Strip empty adjacent quote concatenations like 'cu''rl' or "cu""rl"
+    text = re.sub(r"''|\"\"", "", text)
+    # Strip single-character or intra-word quote splits like c'u'r'l or 'cu'rl
+    text = re.sub(r"(?<=\w)['\"](?=\w)", "", text)
+    text = re.sub(r"(?:^|(?<=[\s|;&(]))(['\"])([A-Za-z0-9_./~$-]+)\1(?=\w|\s|[|;&)]|$)", r"\2", text)
+    # Resolve $HOME, ${HOME}, and leading/arg ~/
+    text = text.replace("${HOME}", home).replace("$HOME", home)
+    text = re.sub(r"(?:^|(?<=[\s=:<'\"(]))~(?=/|\s|$)", home, text)
+    return text
+
+
 def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
@@ -374,6 +400,7 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
 
     command = tool_input.get("command") if tool_name == "Bash" else None
+    norm_command = normalize_shell_command(command) if isinstance(command, str) else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
@@ -384,17 +411,20 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
             matched = (
                 tool_name in ("Write", "Edit", "MultiEdit")
                 and isinstance(path, str)
-                and bool(rule.pattern.search(os.path.normpath(path)))
+                and bool(rule.pattern.search(_normalize_path(path)))
             )
         elif rule.scope == "read_path":
             path = tool_input.get("file_path")
             matched = (
                 tool_name == "Read"
                 and isinstance(path, str)
-                and bool(rule.pattern.search(os.path.normpath(path)))
+                and bool(rule.pattern.search(_normalize_path(path)))
             )
         elif rule.scope == "shell_command":
-            matched = isinstance(command, str) and bool(rule.pattern.search(command))
+            matched = isinstance(command, str) and (
+                bool(rule.pattern.search(command))
+                or (norm_command is not None and bool(rule.pattern.search(norm_command)))
+            )
         else:
             matched = bool(rule.pattern.search(combined))
         if matched:
