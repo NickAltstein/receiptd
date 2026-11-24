@@ -19,7 +19,13 @@ receiptd init --claude-code --policy-path .receiptd/v1_5.policy.json
 ```
 
 The v1.5 evaluation must pin this policy file and its SHA-256, rather than use
-the unchanged default. See [candidate scope and limits](docs/dev/v1_5-phase1.md).
+the unchanged default. From this branch's checkout, wire the candidate with:
+
+```bash
+receiptd init --claude-code --policy-path receiptd/hooks/v1_5.policy.json
+```
+
+See [candidate scope and limits](docs/dev/v1_5-phase1.md).
 Conditional git-config includes currently cause a deny when the candidate
 cannot resolve the effective hook roots, including during ordinary coding.
 
