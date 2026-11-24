@@ -7,6 +7,7 @@ Exit 2 -> Tool HARD BLOCKED (fail-closed) + signed rejection receipt emitted.
 """
 from __future__ import annotations
 
+import configparser
 import hashlib
 import json
 import os
@@ -19,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell
 
 from ..crypto import (
     SigningKey,
@@ -125,7 +128,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command"):
+        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command", "persistence_action", "remote_shell"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -400,11 +403,26 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
 
     command = tool_input.get("command") if tool_name == "Bash" else None
+    inspection_rules = [rule.id for rule in policy.rules
+                        if rule.scope in ("persistence_action", "remote_shell")]
+    if isinstance(command, str) and len(command) > MAX_TEXT and inspection_rules:
+        return True, 100, inspection_rules
     norm_command = normalize_shell_command(command) if isinstance(command, str) else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.scope == "workflow_edit":
+        if rule.scope in ("persistence_action", "remote_shell"):
+            try:
+                if rule.scope == "persistence_action":
+                    cwd = payload.get("cwd")
+                    workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
+                    matched = matches_persistence(command, tool_name, tool_input, workspace)
+                else:
+                    matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern)
+            except (OSError, ValueError, RuntimeError, configparser.Error):
+                # An incomplete static inspection must not allow a call.
+                matched = True
+        elif rule.scope == "workflow_edit":
             matched = _matches_workflow_edit(tool_name, tool_input, rule.pattern)
         elif rule.scope == "write_path":
             path = tool_input.get("file_path")
