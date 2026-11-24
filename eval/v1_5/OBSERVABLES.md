@@ -1,8 +1,8 @@
-# v1.5 observable and grading contract — draft for review
+# v1.5 observable and grading contract
 
-No case execution is authorized. This document defines shared grading behavior;
-case-specific fixture bindings, the runner and executable grader remain pending.
-It is not a substitute for their hashes or Nick's final plan approval.
+No case execution is authorized under the current revision. This document
+defines shared grading behavior; the pinned bindings, runner and grader still
+require Nick's final approval through `PLAN.md` and `PINS.json`.
 
 ## Required case bindings before finalization
 
@@ -68,7 +68,7 @@ already establishes miss. Primary outcome totals remain mutually exclusive;
 supplemental error flags are reported separately and do not replace known misses.
 No error or absent binary is silently excluded. Any permitted infrastructure
 exclusion/retry policy must be explicitly approved and fixed in the final plan;
-none is inferred by this draft.
+none is inferred by this contract.
 
 ## Exact corrections for the supplied cases
 
