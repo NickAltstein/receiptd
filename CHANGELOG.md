@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Update README examples from isolated command captures and document the v1.5 scored results.
+- Install the Stop hook only when `receiptd init --test-cmd` names a test command.
+
 ## [1.2.0] - 2026-11-17
 
 - Default PreToolUse policy denies download-and-execute commands, remote shell indicators, credential reads paired with egress, and writes to persistence paths.

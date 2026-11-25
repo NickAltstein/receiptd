@@ -1,0 +1,2 @@
+# CI smoke test status text; no credential material.
+scripts/ci_smoke.sh:generic-api-key:135
