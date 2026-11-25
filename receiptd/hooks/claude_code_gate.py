@@ -649,6 +649,7 @@ def _run() -> int:
                 return 2
 
             # Key loaded successfully: construct signed receipt
+            hook_run = os.environ.get("RECEIPTD_HOOK_RUN", "")
             receipt = build_signed_receipt(
                 sk=sk,
                 v=1,
@@ -663,7 +664,13 @@ def _run() -> int:
                 reason=reason,
                 policy_sha256=policy_sha256,
                 prev_hash=prev_hash,
-                extra_fields={"latency_ms": latency_ms, "tool_input": tool_input},
+                extra_fields={
+                    "latency_ms": latency_ms,
+                    "tool_input": tool_input,
+                    # Lets the installed hook command find this receipt if the
+                    # process exits non-zero after it (see hooks/hook_exit.py).
+                    **({"hook_run": hook_run} if hook_run else {}),
+                },
             )
             # Receipt, checkpoint, and "finished" go in one locked block so the
             # watchdog sees either nothing written or the whole decision.

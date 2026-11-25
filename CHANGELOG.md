@@ -4,6 +4,8 @@
 
 - Update README examples from isolated command captures and document the v1.5 scored results.
 - Install the Stop hook only when `receiptd init --test-cmd` names a test command.
+- When the PreToolUse gate crashes after writing an allow receipt, the hook now appends a signed deny receipt naming it, so the ledger shows the call was blocked. Existing installs keep the old hook command until you re-run `receiptd init --claude-code`.
+- The gate waits for its watchdog timer thread before it exits.
 
 ## [1.2.0] - 2026-11-17
 

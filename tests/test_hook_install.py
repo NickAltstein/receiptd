@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -95,10 +96,10 @@ def test_shell_wrapper_turns_import_failure_into_exit_2():
 
 def test_init_command_uses_this_interpreter():
     command = pretooluse_hook_command(".receiptd/pretooluse.policy.json")
-    assert command.startswith(sys.executable) or command.startswith(f"'{sys.executable}'")
-    assert "receiptd.hooks.claude_code_gate" in command
+    assert f'RECEIPTD_HOOK_RUN="$run" {shlex.quote(sys.executable)} -m receiptd.hooks.claude_code_gate' in command
     assert ".receiptd/receipts.jsonl" in command
-    assert command.endswith("|| exit 2")
+    assert "receiptd.hooks.hook_exit" in command
+    assert command.endswith("exit 2; }")
     assert not command.startswith("python3 ")
 
 
@@ -258,7 +259,7 @@ def test_isolated_venv_install_blocks_known_bad_call(tmp_path):
     settings = json.loads((project / ".claude" / "settings.json").read_text())
     command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert str(venv_python) in command
-    assert "|| exit 2" in command
+    assert command.endswith("exit 2; }")
     assert not command.startswith("python3 ")
 
     before = 0

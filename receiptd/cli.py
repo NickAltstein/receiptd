@@ -140,17 +140,35 @@ def hook_shell_command(executable: str, args: list[str]) -> str:
 
 
 def pretooluse_hook_command(policy_path: str, ledger_path: str = INIT_LEDGER_PATH) -> str:
-    """PreToolUse command bound to the interpreter that is running init."""
-    return hook_shell_command(
-        sys.executable,
-        [
-            "-m",
-            "receiptd.hooks.claude_code_gate",
-            "--policy",
-            policy_path,
-            "--ledger",
-            ledger_path,
-        ],
+    """PreToolUse command bound to the interpreter that is running init.
+
+    Like ``hook_shell_command``, any non-zero gate exit becomes exit 2. When
+    the gate exits neither 0 nor 2 (a crash: 1, 137, 139, ...), or exits 2
+    although its allow receipt for this run is already in the ledger, it
+    first runs ``receiptd.hooks.hook_exit``, which appends a deny receipt
+    naming that allow receipt, so the ledger shows the call was blocked. The
+    run id ties the two receipts together. A normal allow (0) or deny (2)
+    never starts the recorder. Whatever the recorder does, the command still
+    exits 2.
+    """
+    python = shlex.quote(sys.executable)
+    ledger = shlex.quote(ledger_path)
+    gate = " ".join(
+        shlex.quote(part)
+        for part in ["-m", "receiptd.hooks.claude_code_gate", "--policy", policy_path, "--ledger", ledger_path]
+    )
+    return (
+        "run=$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \\n'); "
+        f'RECEIPTD_HOOK_RUN="$run" {python} {gate} || '
+        "{ s=$?; "
+        # A crash (neither 0 nor 2) always runs the recorder. Exit 2 is the
+        # gate's deny, unless this run's allow receipt is already in the
+        # ledger (e.g. the watchdog's os._exit(2) after the write); grep
+        # checks that without starting Python.
+        'if [ "$s" -ne 2 ] || '
+        f'grep -F "\\"hook_run\\":\\"$run\\"" {ledger} 2>/dev/null | grep -qF \'"decision":"allow"\'; then '
+        f'{python} -m receiptd.hooks.hook_exit --ledger {ledger} --run "$run" --status "$s" >/dev/null 2>&1; fi; '
+        "exit 2; }"
     )
 
 
