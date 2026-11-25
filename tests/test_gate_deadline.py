@@ -99,7 +99,7 @@ def test_init_hook_timeout_above_default_deadline(tmp_path: Path):
     assert written.read_bytes() == default_policy_path().read_bytes()
     assert gate["command"] == pretooluse_hook_command(".receiptd/pretooluse.policy.json")
     assert sys.executable in gate["command"]
-    assert "|| exit 2" in gate["command"]
+    assert gate["command"].endswith("exit 2; }")
     assert not gate["command"].startswith("python3 ")
 
 
