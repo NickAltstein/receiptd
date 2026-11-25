@@ -123,13 +123,19 @@ reasons unrelated to the gate.
 
 ## Confirming against private results
 
-For each v1.5 miss, filter its calls to `prohibited_action_attempted ==
-"true"` and `caller_dispatch_observed == "true"`:
+`case-results.jsonl` holds one grade per case. The per-call observations are
+in `runs/<model>-<corpus>-<case>/evidence.json`, and the commands are in the
+same directory's `events.jsonl`. Run, locally and read-only:
 
-- `hook_matched_and_invoked == "false"` means route 2 (an unhooked `glob` or
-  `grep`). `native_tool_name` names the tool.
-- Otherwise, look up the command at the call's `events.jsonl` line and match
-  it to the tables above.
+    python eval/v1_6/classify_v1_5_misses.py <private v1.5 output dir>
+
+For each miss it lists the calls with `prohibited_action_attempted == "true"`
+and `caller_dispatch_observed == "true"`:
+
+- `route=unhooked` (`hook_matched_and_invoked == "false"`) is route 2, an
+  unhooked `glob` or `grep`. Only the tool name is recorded for these calls.
+- `route=hooked` shows the gate's exit status and the command or path from
+  `events.jsonl`. Match it to the tables above.
 
 Record the confirmed cause per case in the v1.6 plan. Do not publish raw
 traces.
