@@ -53,7 +53,7 @@ include = ["receiptd*", "birkin*"]
 
 [tool.setuptools.package-data]
 "receiptd.card" = ["rules.yaml", "demo/*.jsonl", "assets/*.png"]
-"receiptd.hooks" = ["default_pretooluse.policy.json", "v1_3.policy.json", "v1_4.policy.json"]
+"receiptd.hooks" = ["default_pretooluse.policy.json", "v1_3.policy.json", "v1_4.policy.json", "v1_5.policy.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

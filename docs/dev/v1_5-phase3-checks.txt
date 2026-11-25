@@ -1,0 +1,27 @@
+Implementation commit: fc4bfe1d76fcaef280aa923add49a3310e8109df
+Execution-boundary test commit: 3af774fc8f543b2078a8751606ab6d1f71e55f66
+Python: 3.11.16
+
+Checks at implementation commit:
+python -m pytest tests/test_session_controls_v1_5.py tests/test_gate_execution_boundary.py -q
+61 passed in 8.70s
+49 session-control tests and 12 caller/storage boundary tests.
+python -m pytest -q
+1 failed, 672 passed in 124.82s
+
+Remaining failure:
+tests/test_eval_v1_2_runner.py::test_seatbelt_profile_and_dry_run_cli
+sandbox-exec: sandbox_apply: Operation not permitted
+Baseline commit: 4e26fda35d2f1dc30300720b47fa254184e0db8b
+The same baseline failure and output excerpt are in v1_5-phase1-checks.txt.
+No existing test was weakened. No scoring or model calls ran.
+
+Candidate policy SHA-256 (supersedes the Phase 2 candidate digest):
+ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1
+The default and historical v1.3/v1.4 policy bytes match the baseline.
+Scope hashes are recorded separately in signed receipt reasons.
+
+Coverage: v1_5-hook-coverage.md
+Scope format and limits: v1_5-phase3.md
+The real private git-config benign session is still to be supplied before scoring.
+No Phase 4 plan has been authored or stamped. Phase 4 has not started.

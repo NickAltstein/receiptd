@@ -1,0 +1,86 @@
+{
+  "status": "approved",
+  "scoring_authorized": true,
+  "scoring_rule": "score once, publish misses, no regrades, report per model strictly separated",
+  "gate_implementation": {
+    "policy": "receiptd/hooks/v1_5.policy.json",
+    "policy_sha256": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+    "gate_script": "receiptd/hooks/claude_code_gate.py",
+    "gate_script_sha256": "544b8df2c6037328800dd33468aa90a6f2e73e96b68e447764dc3526b5bdbd30",
+    "shell_analysis": "receiptd/hooks/shell_analysis.py",
+    "shell_analysis_sha256": "1aca64cb9f074b71cd2f3e24d57d26a831afcc1e5f3f2ecdd9ad2dd6cad5c751",
+    "session_controls": "receiptd/hooks/session_controls.py",
+    "session_controls_sha256": "552e656c1b2f627128fa7166f0e4f0bf5081377bbed8aff1ddb3ecaa4d268e0c",
+    "sensitive_paths": "receiptd/hooks/sensitive_paths.py",
+    "sensitive_paths_sha256": "bb52c2e983da1bcd93109ad38ef04311e6b2f151c7784d284fd9f5a01a66be3b"
+  },
+  "corpora": {
+    "main_set": {
+      "path": "eval/v1_5/main-attack-manifest.json",
+      "sha256": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+      "cases": 40,
+      "cases_per_category": 8,
+      "authorship": {
+        "type": "isolated_non_fix_author_generator",
+        "generator_model": "mistral:7b",
+        "generator_model_digest": "sha256:6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf",
+        "authorship_label": "independently generated cases under a documented isolation contract, without claiming human authorship"
+      }
+    },
+    "externally_supplied_set": {
+      "path": "eval/v1_5/externally-supplied-cases.json",
+      "sha256": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+      "cases": 10,
+      "authorship_label": "externally supplied, policy-author-exposed evaluation cases",
+      "corrections": [
+        "HO-03",
+        "HO-10"
+      ]
+    },
+    "case_bindings": {
+      "path": "eval/v1_5/case-bindings.json",
+      "sha256": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70"
+    }
+  },
+  "private_benign_set": {
+    "session_sha256": "4071fb4360fc4383c1a01869a9a19025f56fe5570ec231adeeb8c67c91b47b02",
+    "size_bytes": 42607859,
+    "total_tool_calls": 897,
+    "git_config_calls": 1,
+    "raw_path_omitted": true
+  },
+  "evaluated_models": {
+    "ollama_version": "0.40.16",
+    "qwen2.5:7b": "sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
+    "llama3.1:8b": {
+      "ollama_digest": "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+      "weights_sha256": "sha256:667b0c1932bc6ffc593ed1d03f895bf2dc8dc6df21db3042284a6f4416b06a29",
+      "local_manifest_sha256": "3fc95d284915704cf140b825abf5150af0d32fde95f55c081c9602d49d4547c0"
+    }
+  },
+  "vm": {
+    "limactl_version": "2.3.0",
+    "vm_type": "vz",
+    "arch": "aarch64",
+    "image_url": "https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img",
+    "image_digest": "sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e",
+    "mounts": []
+  },
+  "all_artifact_sha256": {
+    "receiptd/hooks/v1_5.policy.json": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+    "receiptd/hooks/claude_code_gate.py": "544b8df2c6037328800dd33468aa90a6f2e73e96b68e447764dc3526b5bdbd30",
+    "receiptd/hooks/shell_analysis.py": "1aca64cb9f074b71cd2f3e24d57d26a831afcc1e5f3f2ecdd9ad2dd6cad5c751",
+    "receiptd/hooks/session_controls.py": "552e656c1b2f627128fa7166f0e4f0bf5081377bbed8aff1ddb3ecaa4d268e0c",
+    "receiptd/hooks/sensitive_paths.py": "bb52c2e983da1bcd93109ad38ef04311e6b2f151c7784d284fd9f5a01a66be3b",
+    "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+    "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+    "eval/v1_5/case-bindings.json": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70",
+    "eval/v1_5/generate_main_set.py": "460bca93ee706606114ba71904ec86ef76c4988e98e957ffaa5f0dd334eb68f4",
+    "eval/v1_5/OBSERVABLES.md": "ef5041bd97f30570a0d9d37e58e5b825d94df060d70d116752ca94c850bfb365",
+    "eval/v1_5/PLAN.md": "9eb4862c4d2b87332c5f836718c6b8bbdb9cee1cfd662dd357bd0519a24f49b2",
+    "eval/v1_5/lima-vm.yaml": "2867f6161dc74fd8a7c1aa68e695feab70d92c11d893855f4f02c26aa65735f4",
+    "eval/v1_5/grader.py": "f95f2566cf9d71361b6981dbfc4e25a920c5d8aca25378ba3658c6c367cdbdb7",
+    "eval/v1_5/runner.py": "38dd7cc876e3846dcb78e140f5be28518e7b8c13860c4478e07771feb4df64eb",
+    "eval/v1_5/execution.py": "682d4fa8551e098600d5b122af87a8a7efb59d8e34070051c2abc701adf1f0a1"
+  }
+}

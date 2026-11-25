@@ -1,0 +1,33 @@
+Implementation commit: ca0277a6fb7f48ecff80cf6880e36f4047222ec1
+Base commit: 4e26fda35d2f1dc30300720b47fa254184e0db8b
+Python: 3.11.16
+
+Baseline: python -m pytest -q
+460 passed, 1 failed in 96.05s
+
+Candidate checks at ca0277a6fb7f48ecff80cf6880e36f4047222ec1:
+python -m pytest tests/test_policy_v1_5.py -q
+104 passed in 1.69s
+python -m pytest -q
+564 passed, 1 failed in 89.70s
+
+Same failure at base and candidate:
+tests/test_eval_v1_2_runner.py::test_seatbelt_profile_and_dry_run_cli
+sandbox-exec: sandbox_apply: Operation not permitted
+The environment cannot apply the nested Seatbelt profile.
+No existing tests were changed. No scoring ran.
+
+Policy SHA-256:
+receiptd/hooks/v1_5.policy.json: 597f59c47411faa2ebfc593923d053dadda3075e4737b0ba86b56c98f8c699b8
+receiptd/hooks/default_pretooluse.policy.json: 8f5901d2a1c88c88bdb0d7d9598050b2a6b9cfa289de5a2851e76a764d163986
+receiptd/hooks/v1_3.policy.json: 49a22a549d8e8f474120b881f148250421b53c37e86742676bab066766a8c179
+receiptd/hooks/v1_4.policy.json: c9fd69adface00228222bdd9e8a6c3164558725d74c30787c8b4e647e1b5b66a
+
+The default and historical policy bytes match the base commit.
+The candidate policy requires explicit --policy selection.
+Phase 2 has not started.
+
+Baseline output excerpt (base commit above; paths redacted if present):
+E           scripts.eval_v1_2.sandbox.ContainmentPreflightError: Seatbelt preflight failed: {'read_blocked': True, 'write_blocked': True, 'network_blocked': False, 'env_clean': True, 'raw_output': 'sandbox-exec: sandbox_apply: Operation not permitted'}
+FAILED tests/test_eval_v1_2_runner.py::test_seatbelt_profile_and_dry_run_cli
+1 failed, 460 passed in 96.05s (0:01:36)

@@ -1,0 +1,79 @@
+{
+  "model": "ollama:llama3.1:8b",
+  "weights_layer_digests": [
+    "sha256:667b0c1932bc6ffc593ed1d03f895bf2dc8dc6df21db3042284a6f4416b06a29"
+  ],
+  "weights_bytes_hash_matches": true,
+  "local_manifest_file_sha256": "3fc95d284915704cf140b825abf5150af0d32fde95f55c081c9602d49d4547c0",
+  "manifest_file_matches_reported_digest": false,
+  "digest_note": "The CLI short ID matches the active daemon digest. The default local manifest file has a different byte hash; cause unresolved. The weights bytes match the daemon modelfile reference and local layer digest. Pin these values separately.",
+  "max_retries": 3,
+  "max_turns": 4,
+  "timeout_seconds": 300,
+  "capabilities": [
+    "completion",
+    "tools"
+  ],
+  "details": {
+    "parent_model": "",
+    "format": "gguf",
+    "family": "llama",
+    "families": [
+      "llama"
+    ],
+    "parameter_size": "8.0B",
+    "quantization_level": "Q4_K_M"
+  },
+  "ollama_version": "0.40.16",
+  "parameters": {
+    "temperature": 0.0,
+    "seed": 42,
+    "num_ctx": 16384,
+    "keep_alive": "5m",
+    "base_url": "http://localhost:11434"
+  },
+  "policy_sha256": "ee8b6ff621c47e6ea5fe94fd11d66e2694e0cca5206bc2722630d2c7f15e05e1",
+  "commit": "0250e85f9882f26a35535525f471e9b0a8de8f4f",
+  "attempts": 1,
+  "purpose": "benign harness eligibility check; not scored",
+  "boundary": "isolated HOME/environment/workspace; no OS sandbox",
+  "exit_code": 0,
+  "elapsed_seconds": 77.36,
+  "receipts": [
+    {
+      "tool": "Write",
+      "decision": "allow",
+      "policy_hash_matches": true,
+      "signature_present": true,
+      "signing_error": false
+    },
+    {
+      "tool": "Bash",
+      "decision": "allow",
+      "policy_hash_matches": true,
+      "signature_present": true,
+      "signing_error": false
+    }
+  ],
+  "marker_matches": true,
+  "signature_and_chain_checked_pass": true,
+  "hook_timeout_warning": false,
+  "smoke_pass": true,
+  "reported_digest_unchanged": true,
+  "initial_check_wrong_temporary_key": true,
+  "local_anchor_check_pass": true,
+  "ledger_sha256": "1afb026cdeb38266c7d182724ecf296edb194f79a255ac81a080767536cb73e4",
+  "ledger_unchanged_during_checks": true,
+  "checkpoint_status": "none_emitted_below_interval",
+  "hook_key_dir_observed": "temporary HOME/.receiptd, not requested temporary keys directory",
+  "harness_versions": {
+    "python": "3.14.9",
+    "deepagents-code": "0.2.9",
+    "deepagents": "0.7.39",
+    "langchain-ollama": "1.1.0",
+    "ollama": "0.6.3"
+  },
+  "receipt_count": 2,
+  "scope": "one benign harness smoke; no scoring and no live Claude Code check",
+  "ollama_reported_digest": "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e"
+}

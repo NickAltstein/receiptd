@@ -1,0 +1,90 @@
+{
+  "format": "receiptd.pretooluse.v1",
+  "description": "v1.5 candidate: class-level persistence and remote-shell inspection for hooked tool calls.",
+  "base_score": 10,
+  "deny_at": 75,
+  "rules": [
+    {
+      "id": "POL-01:ENV_EXFILTRATION",
+      "weight": 95,
+      "ignore_case": true,
+      "pattern": "(?s)\\A(?=.*(?:\\b(?:cat|tar|head|tail|sed|awk|grep|scp|rsync)\\s+[^\\n;&|]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|@[^\\s\"\\x27]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|(?:-T|--upload-file|--(?:post|body)-file)(?:\\s+|=)[\"\\x27]?[^\\s\"\\x27]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|\\bopen\\(\\s*\\\\?[\"\\x27][^\\n]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|\\benv\\s*(?=\\|)|\\bprintenv\\s*(?=\\|)))(?=.*(?:\\bcurl(?=\\s)[^\\n;&|]*?(?:\\s(?:-d|-F|-T|--data(?:-binary|-raw|-urlencode)?|--form|--upload-file)(?=[\\s=]|$))|\\bwget(?=\\s)[^\\n;&|]*?\\s--(?:post|body)-(?:data|file)(?=[\\s=]|$)|\\b(?:nc|ncat|netcat)\\b(?![^\\n;&|]*\\s-z\\b)\\s+|\\b(?:scp|rsync)\\s+[^\\n]*?(?:[\\w.-]+@)?[\\w.-]+:|\\brequests\\s*\\.\\s*(?:post|put|patch)\\s*\\())",
+      "scope": "shell_command"
+    },
+    {
+      "id": "POL-02:DESTRUCTIVE_DDL_OR_FS",
+      "weight": 90,
+      "ignore_case": true,
+      "pattern": "(\\bDROP\\s+TABLE\\b|\\bDROP\\s+DATABASE\\b|\\bTRUNCATE\\b|\\bDELETE\\s+FROM\\b(?![^;]*\\bWHERE\\b)|rm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*[rf]{2}[a-zA-Z]*|--recursive\\s+--force|--force\\s+--recursive)\\s+[/~*]|\\bfind\\s+.*\\s+-delete\\b|\\bgit\\s+push\\s+.*(--force|-f\\b|\\+)|mkfs|/etc/passwd)"
+    },
+    {
+      "id": "POL-03:PRIVILEGE_ESCALATION",
+      "weight": 85,
+      "ignore_case": true,
+      "pattern": "(\\bsudo\\b|chmod\\s+777|chown\\s+root|\\.claude/settings(\\.local)?\\.json)"
+    },
+    {
+      "id": "POL-04:WORKFLOW_PROTECTED_KEYS",
+      "weight": 85,
+      "ignore_case": false,
+      "pattern": "^(?:-\\s+)?(?:run|uses|permissions|'run'|'uses'|'permissions'|\\\"run\\\"|\\\"uses\\\"|\\\"permissions\\\")\\s*:",
+      "scope": "workflow_edit"
+    },
+    {
+      "id": "POL-05:PERSISTENCE_PATH",
+      "weight": 85,
+      "ignore_case": false,
+      "scope": "write_path",
+      "pattern": "(?:^|/)(?:\\.bashrc|\\.bash_profile|\\.bash_login|\\.zshrc|\\.zprofile|\\.zshenv|\\.zlogin|\\.profile)$|(?:^|/)\\.git/hooks/[^/]+$|(?:^|/)(?:Library/Launch(?:Agents|Daemons)|etc/(?:systemd/system|cron\\.d)|\\.config/systemd/user)/[^/]+$|^/etc/crontab$"
+    },
+    {
+      "id": "POL-06:DOWNLOAD_EXECUTION",
+      "weight": 90,
+      "ignore_case": false,
+      "scope": "shell_command",
+      "pattern": "(?:\\b(?:curl|wget|fetch)(?=\\s)|\\bbase64\\s+(?:-d\\b|--decode\\b))[^\\n;]*?\\|(?!\\|)\\s*(?:[^\\s|;&]+/)?(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\\.\\d+)?)?|node)\\b|(?:[^\\s|;&]+/)?(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\\.\\d+)?)?|node)\\b\\s+(?:-[\\w-]+\\s+)*(?:\\$?\\\\*[\"\\x27])*(?:<\\(|\\\\*\\$\\(|\\\\*`)\\s*(?:[^\\s]+/)?\\b(?:curl|wget|fetch)(?=\\s)|\\b(?:curl|wget|fetch)(?=\\s)[^\\n;&|]*?(?:&&|;)\\s*(?:(?:[^\\s]+/)?chmod\\s+(?:[augo]*\\+x|[0-7]{3,4})\\s+[^\\n;&|]+|(?:[^\\s|;&]+/)?(?:sh|bash|zsh|dash|ksh|python(?:[23](?:\\.\\d+)?)?|node)\\b\\s+(?:\\./|/tmp/|/var/tmp/)|(?:\\./|/tmp/|/var/tmp/)\\S+)"
+    },
+    {
+      "id": "POL-07:REMOTE_SHELL",
+      "weight": 90,
+      "ignore_case": true,
+      "scope": "remote_shell",
+      "pattern": "\\b(?:bash|sh)\\s+[^\\n;|]*?-i\\b[^\\n;|]*?/dev/tcp/|\\b(?:nc|ncat|netcat)\\s+[^\\n;|]*?\\s?-(?:e|c)(?:\\s|=)|\\bsocat\\s+[^\\n;|]*?\\bexec:|(?=[^\\n]*\\bmkfifo\\b)(?=[^\\n]*\\b(?:nc|ncat|netcat)\\b)[^\\n]*\\||\\b(?:python(?:[23](?:\\.\\d+)?)?|perl|ruby)\\s+[^\\n;]*?\\s?-[ceE]\\b(?=[^\\n]*\\bsocket\\b)(?=[^\\n]*\\b(?:pty|dup2)\\b)"
+    },
+    {
+      "id": "POL-08:SHELL_PERSISTENCE",
+      "weight": 90,
+      "ignore_case": false,
+      "scope": "persistence_action",
+      "pattern": "(?:>{1,2}\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.bash_profile|\\.bash_login|\\.zshrc|\\.zprofile|\\.zshenv|\\.zlogin|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)|\\b(?:cp|mv|install)\\s+[^\\n;&|]*?\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.bash_profile|\\.bash_login|\\.zshrc|\\.zprofile|\\.zshenv|\\.zlogin|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)[\"\\x27]?\\s*(?=[;&|\\n]|$)|\\bcrontab\\s+-(?=\\s*(?:[<;&|]|$))|\\bsystemctl\\s+--user\\s+enable\\b)"
+    },
+    {
+      "id": "POL-09:SENSITIVE_READ",
+      "weight": 85,
+      "ignore_case": false,
+      "scope": "read_path",
+      "pattern": "(?:(?:^|(?<=[/\\s\"'<=`]))\\.env(?![^/\\s\"'|;&]*\\.example(?=[/\\s\"'|;&]|$))[^/\\s\"'|;&]*|(?:^|(?<=[/\\s\"'<=`]))\\.ssh/[^\\s\"'|;&]+|(?:^|(?<=[/\\s\"'<=`]))\\.netrc|(?:^|(?<=[/\\s\"'<=`]))\\.aws/credentials|(?:^|(?<=[/\\s\"'<=`]))\\.config/gcloud/[^\\s\"'|;&]+|[^\\s\"'|;&]+\\.pem|(?:^|(?<=[/\\s\"'<=`]))id_[^\\s\"'|;&]+)$"
+    },
+    {
+      "id": "POL-10:SENSITIVE_BASH_READ",
+      "weight": 85,
+      "ignore_case": false,
+      "scope": "shell_command",
+      "pattern": "(?:\\b(?:cat|less|head|tail|cp|base64|xxd|tar|zip)\\s+[^\\n;&|]*?|(?<![<>])<\\s*[\"'`]?[^\\s\"'`;&|]*?)(?:(?:^|(?<=[/\\s\"'<=`]))\\.env(?![^/\\s\"'|;&]*\\.example(?=[/\\s\"'|;&]|$))[^/\\s\"'|;&]*|(?:^|(?<=[/\\s\"'<=`]))\\.ssh/[^\\s\"'|;&]+|(?:^|(?<=[/\\s\"'<=`]))\\.netrc|(?:^|(?<=[/\\s\"'<=`]))\\.aws/credentials|(?:^|(?<=[/\\s\"'<=`]))\\.config/gcloud/[^\\s\"'|;&]+|[^\\s\"'|;&]+\\.pem|(?:^|(?<=[/\\s\"'<=`]))id_[^\\s\"'|;&]+)(?=[\\s\"'|;&)]|$)"
+    },
+    {
+      "id": "POL-11:SELF_PROTECTION",
+      "weight": 100,
+      "ignore_case": false,
+      "scope": "self_protection",
+      "pattern": ".*"
+    },
+    {
+      "id": "POL-15:SUPPLY_CHAIN",
+      "weight": 100,
+      "ignore_case": false,
+      "scope": "supply_chain",
+      "pattern": ".*"
+    }
+  ]
+}

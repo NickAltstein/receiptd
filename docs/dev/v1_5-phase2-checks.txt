@@ -1,0 +1,22 @@
+Implementation commit: e57642e978a99b356b680f406c4e1c5938e9094b
+Python: 3.11.16
+
+At that commit:
+python -m pytest tests/test_self_protection_v1_5.py tests/test_policy_v1_5.py -q
+151 passed in 2.17s
+47 new Phase 2 tests; 104 retained Phase 1 tests.
+python -m pytest -q
+1 failed, 611 passed in 104.82s
+
+Remaining failure:
+tests/test_eval_v1_2_runner.py::test_seatbelt_profile_and_dry_run_cli
+sandbox-exec: sandbox_apply: Operation not permitted
+Same environment failure recorded at base 4e26fda35d2f1dc30300720b47fa254184e0db8b.
+Baseline output excerpt is in v1_5-phase1-checks.txt.
+No existing test was changed. No scoring ran.
+
+Candidate policy SHA-256 (supersedes the Phase 1 candidate digest):
+0ed09711b1a2918e950f0904475e8c60bf97b4d1fb00aec0a73b7f0bbccb8ee2
+The packaged default and historical v1.3/v1.4 policy bytes match the base.
+The candidate remains opt-in; Phase 4 must pin its final digest.
+Phase 3 has not started.

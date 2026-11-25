@@ -7,6 +7,7 @@ Exit 2 -> Tool HARD BLOCKED (fail-closed) + signed rejection receipt emitted.
 """
 from __future__ import annotations
 
+import configparser
 import hashlib
 import json
 import os
@@ -20,10 +21,15 @@ from pathlib import Path
 
 import yaml
 
+from .session_controls import load_scope, scope_rules, supply_chain_match
+
+from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell, matches_self_protection
+
 from ..crypto import (
     SigningKey,
     canonical_json,
     get_signing_key,
+    get_key_dir,
 )
 from ..ledger import (
     GENESIS_HASH,
@@ -125,7 +131,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command"):
+        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -380,7 +386,7 @@ def normalize_shell_command(command: str) -> str:
     return text
 
 
-def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[bool, int, list[str]]:
+def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = ()) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
@@ -400,11 +406,33 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None) -> tuple[b
     combined = f"{tool_name} {canonicalize_jcs(tool_input)}"
 
     command = tool_input.get("command") if tool_name == "Bash" else None
+    inspection_rules = [rule.id for rule in policy.rules
+                        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain")]
+    if isinstance(command, str) and len(command) > MAX_TEXT and inspection_rules:
+        return True, 100, inspection_rules
     norm_command = normalize_shell_command(command) if isinstance(command, str) else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.scope == "workflow_edit":
+        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain"):
+            try:
+                if rule.scope in ("persistence_action", "self_protection"):
+                    cwd = payload.get("cwd")
+                    workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
+                    if rule.scope == "self_protection":
+                        paths = protected_paths + (default_policy_path(), get_key_dir(),
+                            workspace / ".receiptd", workspace / ".birkin")
+                        matched = matches_self_protection(command, tool_name, tool_input, workspace, paths)
+                    else:
+                        matched = matches_persistence(command, tool_name, tool_input, workspace)
+                elif rule.scope == "supply_chain":
+                    matched = isinstance(command, str) and supply_chain_match(command)
+                else:
+                    matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern)
+            except (OSError, ValueError, RuntimeError, configparser.Error):
+                # An incomplete static inspection must not allow a call.
+                matched = True
+        elif rule.scope == "workflow_edit":
             matched = _matches_workflow_edit(tool_name, tool_input, rule.pattern)
         elif rule.scope == "write_path":
             path = tool_input.get("file_path")
@@ -496,6 +524,20 @@ def _run() -> int:
             policy_error = PolicyLoadError("invalid", "policy did not load")
         _CTX["policy_sha256"] = policy_sha256
 
+        scope = None
+        scope_error = False
+        scope_path = None
+        if "--scope" in sys.argv:
+            try:
+                index = sys.argv.index("--scope")
+                value = sys.argv[index + 1]
+                if value.startswith("--"):
+                    raise ValueError("scope path missing")
+                scope_path = Path(value).resolve()
+                scope = load_scope(scope_path, Path.cwd())
+            except (OSError, ValueError, IndexError):
+                scope_error = True
+
         raw_stdin = sys.stdin.read()
         if not raw_stdin.strip():
             sys.stderr.write("[RECEIPTD FAIL-CLOSED] Empty stdin frame rejected.\n")
@@ -513,7 +555,11 @@ def _run() -> int:
             reason = policy_error.reason
             sys.stderr.write(f"[RECEIPTD FAIL-CLOSED] {policy_error}\n")
         else:
-            blocked, score, triggered = evaluate_payload(payload, policy)
+            blocked, score, triggered = evaluate_payload(payload, policy, protected_paths=(
+                policy_path_from_argv(sys.argv).resolve(),
+                Path(_CTX["ledger_path"]).resolve().parent,
+                *((scope_path,) if scope_path is not None else ()),
+            ))
             decision = "deny" if blocked else "allow"
             reason = f"triggered rules: {', '.join(triggered)}" if blocked else "allowed"
 
@@ -556,6 +602,22 @@ def _run() -> int:
         # Read existing ledger state and write next receipt under exclusive inter-process lock
         with lock_ledger(ledger_path):
             prev_hash, last_cp_hash, receipt_count, last_cp_seq, uncheckpointed = read_ledger_state(ledger_path)
+            if scope_error:
+                blocked, score = True, 100
+                triggered = list(dict.fromkeys(triggered + ["POL-12:SCOPE_INVALID"]))
+            if scope is not None:
+                try:
+                    controls = scope_rules(scope, payload, Path(ledger_path))
+                except (OSError, ValueError, RuntimeError):
+                    controls = ["POL-12:SCOPE_STATE_INVALID"]
+                if controls:
+                    blocked, score = True, 100
+                    triggered = list(dict.fromkeys(triggered + controls))
+            decision = "deny" if blocked else "allow"
+            if scope is not None or scope_error:
+                reason = ("matched rules: " + ", ".join(triggered)) if blocked else "allowed"
+                if scope is not None:
+                    reason += "; scope_sha256=" + scope.sha256
             seq = receipt_count + 1
             latency_ms = round((time.perf_counter() - t0) * 1000, 2)
 
