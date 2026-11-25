@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # A native crash (e.g. SIGSEGV) anywhere in the suite dumps every thread's Python stack.
+  PYTHONFAULTHANDLER: "1"
+
 jobs:
   test:
     name: pytest (${{ matrix.os }} / py${{ matrix.python-version }})
@@ -23,6 +27,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The v1.5 pin test reads files from the scored commit.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,6 +52,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The v1.5 pin test reads files from the scored commit.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

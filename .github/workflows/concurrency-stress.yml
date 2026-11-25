@@ -1,18 +1,24 @@
 name: Concurrent gate stress (macOS)
 
 # Repeats the concurrent-gate ledger test on macOS, where a gate subprocess
-# crashed with SIGSEGV on main (run 45692713408). Every iteration must pass.
+# crashed with SIGSEGV on main (run 45692713408), and the session-controls
+# test, where a gate subprocess crashed the same way. Every iteration must pass.
 on:
   pull_request:
     branches: [main]
     paths:
       - "receiptd/**"
       - "tests/test_claude_code_gate.py"
+      - "tests/test_session_controls_v1_5.py"
       - ".github/workflows/concurrency-stress.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  # A native crash (e.g. SIGSEGV) anywhere in the suite dumps every thread's Python stack.
+  PYTHONFAULTHANDLER: "1"
 
 jobs:
   stress:
@@ -22,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -44,6 +50,21 @@ jobs:
           for i in $(seq 1 20); do
             echo "::group::iteration $i"
             if ! python -m pytest -q -rs tests/test_claude_code_gate.py -k test_concurrent_gate_invocations_maintain_valid_ledger; then
+              failures=$((failures + 1))
+              echo "::error::iteration $i failed"
+            fi
+            echo "::endgroup::"
+          done
+          echo "failed iterations: $failures / 20"
+          test "$failures" -eq 0
+
+      - name: Run the session-controls test 20 times
+        if: ${{ !cancelled() }}
+        run: |
+          failures=0
+          for i in $(seq 1 20); do
+            echo "::group::iteration $i"
+            if ! python -m pytest -q -rs tests/test_session_controls_v1_5.py; then
               failures=$((failures + 1))
               echo "::error::iteration $i failed"
             fi
