@@ -240,5 +240,5 @@ plan requires a new PLAN.md hash and renewed approval.
 The original plan's approval (SHA-256 `695efe1d…e81c54d6`) does not carry
 over to this revision.
 
-- [ ] Nick approves this revision (exact SHA-256 recorded at approval) and one scored pass under the conditions above.
-scoring_authorized: false
+- [x] Nick approves this revision (exact SHA-256 recorded at approval) and one scored pass under the conditions above.
+scoring_authorized: true
