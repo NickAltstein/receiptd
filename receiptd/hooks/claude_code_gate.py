@@ -512,6 +512,8 @@ def _main_guarded() -> int:
             _CTX["finished"] = True
             _LEDGER_LOCK.release()
         watchdog.cancel()
+        # Wait for the timer thread to stop so it is not alive at interpreter shutdown.
+        watchdog.join()
 
 
 def _run() -> int:
