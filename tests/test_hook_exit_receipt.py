@@ -164,6 +164,51 @@ def test_exit_before_any_receipt_writes_nothing(tmp_path: Path):
     assert (tmp_path / "recorder-ran").is_file()
 
 
+def _run_broken(tmp_path: Path, gate_part: str) -> tuple[int, list[dict]]:
+    """Run the installed command with the gate invocation replaced by gate_part."""
+    command = _command(tmp_path)
+    target = "-m receiptd.hooks.claude_code_gate"
+    assert command.count(target) == 1
+    command = command.replace(target, gate_part)
+    proc = subprocess.run(
+        ["/bin/sh", "-c", command],
+        input=json.dumps(ALLOWED),
+        text=True,
+        capture_output=True,
+        cwd=tmp_path,
+        env=_env(tmp_path),
+        timeout=60,
+    )
+    ledger = tmp_path / ".receiptd" / "receipts.jsonl"
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()] if ledger.is_file() else []
+    return proc.returncode, rows
+
+
+def test_broken_install_missing_module_runs_fallback_and_blocks(tmp_path: Path):
+    # Python exits 1 when the module can't be imported.
+    status, rows = _run_broken(tmp_path, "-m receiptd.hooks.no_such_gate")
+    assert status == 2
+    assert rows == []
+    assert (tmp_path / "recorder-ran").is_file()
+
+
+@pytest.mark.parametrize(
+    "gate_part",
+    [
+        "/nonexistent/claude_code_gate.py",  # Python: can't open file, exit 2
+        "--no-such-interpreter-flag -m receiptd.hooks.claude_code_gate",  # Python usage error, exit 2
+    ],
+)
+def test_broken_install_python_exit_2_still_blocks(tmp_path: Path, gate_part: str):
+    # Python's own exit 2 looks like a deny. No allow receipt exists for the
+    # run, so there is nothing to override: the call is blocked and the
+    # ledger has no receipt that says otherwise.
+    status, rows = _run_broken(tmp_path, gate_part)
+    assert status == 2
+    assert rows == []
+    assert not (tmp_path / "recorder-ran").exists()
+
+
 def test_missing_interpreter_still_exits_2(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(sys, "executable", "/nonexistent/receiptd-python")
     command = pretooluse_hook_command(".receiptd/pretooluse.policy.json")
