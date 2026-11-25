@@ -31,6 +31,13 @@ g.main()
 os.kill(os.getpid(), signal.SIGSEGV)
 """
 EXIT_BEFORE_GATE = "import sys; sys.exit(1)\n"
+# Exit 2 after an allow receipt, as the watchdog's os._exit(2) could.
+EXIT_2_AFTER_GATE = """
+import os
+from receiptd.hooks import claude_code_gate as g
+g.main()
+os._exit(2)
+"""
 
 
 def _env(tmp_path: Path) -> dict[str, str]:
@@ -41,8 +48,23 @@ def _env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
+# Stands in for the recorder: leaves a marker, then runs the real one.
+RECORDER_SPY = """
+import sys
+from pathlib import Path
+Path("recorder-ran").write_text("x")
+from receiptd.hooks import hook_exit
+sys.exit(hook_exit.main(sys.argv[1:]))
+"""
+
+
 def _command(tmp_path: Path, gate_script: str | None = None) -> str:
     command = pretooluse_hook_command(str(default_policy_path()), ".receiptd/receipts.jsonl")
+    spy = tmp_path / "recorder_spy.py"
+    spy.write_text(RECORDER_SPY)
+    recorder = "-m receiptd.hooks.hook_exit"
+    assert command.count(recorder) == 1
+    command = command.replace(recorder, shlex.quote(str(spy)))
     if gate_script is not None:
         script = tmp_path / "gate_stub.py"
         script.write_text(gate_script)
@@ -90,6 +112,18 @@ def test_crash_after_allow_appends_override_deny(tmp_path: Path):
     assert override["hook_exit_status"] == 139
     assert override["args_sha256"] == allowed["args_sha256"]
     assert f"allowed seq {allowed['seq']}" in override["reason"]
+    assert (tmp_path / "recorder-ran").is_file()
+    assert _verify(tmp_path) == 0
+
+
+def test_exit_2_after_allow_appends_override_deny(tmp_path: Path):
+    status, receipts = _run(tmp_path, ALLOWED, EXIT_2_AFTER_GATE)
+    assert status == 2
+    assert [r["decision"] for r in receipts] == ["allow", "deny"]
+    allowed, override = receipts
+    assert override["overrides_hash"] == allowed["hash"]
+    assert override["hook_exit_status"] == 2
+    assert (tmp_path / "recorder-ran").is_file()
     assert _verify(tmp_path) == 0
 
 
@@ -98,18 +132,36 @@ def test_allow_exit_zero_writes_one_receipt(tmp_path: Path):
     assert status == 0
     assert [r["decision"] for r in receipts] == ["allow"]
     assert receipts[0]["hook_run"]
+    assert not (tmp_path / "recorder-ran").exists()
 
 
-def test_deny_writes_no_override(tmp_path: Path):
+def test_normal_deny_writes_one_receipt_and_starts_no_recorder(tmp_path: Path):
     status, receipts = _run(tmp_path, DENIED)
     assert status == 2
     assert [r["decision"] for r in receipts] == ["deny"]
+    assert not (tmp_path / "recorder-ran").exists()
+
+
+def test_recorder_failure_still_exits_2(tmp_path: Path):
+    command = _command(tmp_path, CRASH_AFTER_GATE)
+    (tmp_path / "recorder_spy.py").write_text("raise SystemExit(7)\n")
+    proc = subprocess.run(
+        ["/bin/sh", "-c", command],
+        input=json.dumps(ALLOWED),
+        text=True,
+        capture_output=True,
+        cwd=tmp_path,
+        env=_env(tmp_path),
+        timeout=60,
+    )
+    assert proc.returncode == 2
 
 
 def test_exit_before_any_receipt_writes_nothing(tmp_path: Path):
     status, receipts = _run(tmp_path, ALLOWED, EXIT_BEFORE_GATE)
     assert status == 2
     assert receipts == []
+    assert (tmp_path / "recorder-ran").is_file()
 
 
 def test_missing_interpreter_still_exits_2(tmp_path: Path, monkeypatch):
