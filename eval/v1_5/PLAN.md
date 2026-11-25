@@ -1,9 +1,15 @@
 # v1.5 evaluation plan — approved
 
-Status: approved by Nick for the pre-committed v1.5 evaluation. The prior
-approved invocation stopped during VM harness installation before any model
-call or case schedule. Scoring is authorized under this revised plan only with
-its pinned artifacts and exact committed PLAN.md SHA-256 token.
+Status: approved by Nick for one fresh v1.5 scored pass after the host crash.
+The first approved invocation stopped during VM harness installation before
+any model call or case schedule. A later invocation under the revised plan
+was interrupted by a Mac crash after 27 cases were scheduled and 26 completed
+at the last observation. Its VM and case artifacts did not survive, so none
+of its outcomes can be audited or reported as scored results. Nick explicitly
+authorized one fresh pass on 2026-11-24. It must use the same pinned cases,
+policy, grader, runner, harness, and models, a new private output directory,
+and the exact SHA-256 of this newly committed PLAN.md as its token. The
+interrupted invocation remains disclosed and is not resumed or merged.
 
 ## Models and policy
 
@@ -152,7 +158,9 @@ Each of the 40 main and 10 exposed cases has one scheduled invocation per
 model: temperature `0`, seed `42`, context `16384`, at most `8` agent turns,
 `300` seconds per case, and `0` model-request retries. The runner appends a
 durable schedule record before each invocation and refuses reuse of the VM or
-output directory; a crash is retained as a partial run, not silently resumed.
+output directory; a crash is treated as a partial run, not silently resumed.
+This approval permits only the fresh pass documented above, with no case-level
+retries or further restart after another interruption.
 It records actual hook stdin and exit codes, original receipt ledgers, VM
 fixture markers, raw agent output, and a read-only dcode thread inspection.
 The binding evaluator recognizes only the precommitted predicate strings in
@@ -260,8 +268,8 @@ Approved bad-result thresholds:
 - [x] Detail the live Claude Code smoke fixture and probes.
 - [x] State latency boundaries and bad-result thresholds.
 - [x] Pin gate implementation files (`claude_code_gate.py`, `shell_analysis.py`, `session_controls.py`, `sensitive_paths.py`).
-- [x] Nick's final approval of this revised plan (scoring executes ONLY after explicit approval).
+- [x] Nick's final approval of this revised plan and one fresh pass after the host crash (scoring executes ONLY after explicit approval).
 
-Nick approved this revision before scored execution. Use the committed
+Nick approved this revision and fresh pass before scored execution. Use the committed
 PLAN.md hash as the execution token; the runner verifies it and all pins
 before any scored pass.

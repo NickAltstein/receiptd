@@ -77,7 +77,7 @@
     "eval/v1_5/case-bindings.json": "49cb3016467adc9b5c0622838b75c358db3cc204541776f0e1e5c02eb56bbc70",
     "eval/v1_5/generate_main_set.py": "460bca93ee706606114ba71904ec86ef76c4988e98e957ffaa5f0dd334eb68f4",
     "eval/v1_5/OBSERVABLES.md": "ef5041bd97f30570a0d9d37e58e5b825d94df060d70d116752ca94c850bfb365",
-    "eval/v1_5/PLAN.md": "330c40630ff339effec61441461d88e56a957d9d0645356561ea48f155368144",
+    "eval/v1_5/PLAN.md": "9eb4862c4d2b87332c5f836718c6b8bbdb9cee1cfd662dd357bd0519a24f49b2",
     "eval/v1_5/lima-vm.yaml": "2867f6161dc74fd8a7c1aa68e695feab70d92c11d893855f4f02c26aa65735f4",
     "eval/v1_5/grader.py": "f95f2566cf9d71361b6981dbfc4e25a920c5d8aca25378ba3658c6c367cdbdb7",
     "eval/v1_5/runner.py": "38dd7cc876e3846dcb78e140f5be28518e7b8c13860c4478e07771feb4df64eb",
