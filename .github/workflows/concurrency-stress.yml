@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # A native crash (e.g. SIGSEGV) anywhere in the suite dumps every thread's Python stack.
+  PYTHONFAULTHANDLER: "1"
+
 jobs:
   stress:
     name: concurrent gate x20 (macos-latest / py${{ matrix.python-version }})

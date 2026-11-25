@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # A native crash (e.g. SIGSEGV) anywhere in the suite dumps every thread's Python stack.
+  PYTHONFAULTHANDLER: "1"
+
 jobs:
   test:
     name: pytest (${{ matrix.os }} / py${{ matrix.python-version }})

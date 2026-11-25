@@ -24,8 +24,8 @@ def invoke(tmp_path, data, payload=None, *, raw=None, write_scope=True):
     env.pop('RECEIPTD_SIGNING_KEY', None)
     env.pop('BIRKIN_SIGNING_KEY', None)
     proc = subprocess.run([sys.executable, '-m', 'receiptd.hooks.claude_code_gate', '--policy', str(POLICY), '--scope', str(scope), '--ledger', str(tmp_path / 'evidence/receipts.jsonl')], input=json.dumps(payload), text=True, capture_output=True, cwd=tmp_path, env=env, timeout=15)
-    # pytest shows this under "Captured stderr" when a test fails.
-    sys.stderr.write(f'gate exit {proc.returncode}; stderr:\n{proc.stderr}')
+    # The gate only ever exits 0 or 2. Anything else (e.g. -11, SIGSEGV) fails here with its trace.
+    assert proc.returncode in (0, 2), f'gate exited {proc.returncode}; stderr:\n{proc.stderr}'
     receipts = [json.loads(line) for line in (tmp_path / 'evidence/receipts.jsonl').read_text().splitlines()]
     return proc.returncode, receipts[-1]
 

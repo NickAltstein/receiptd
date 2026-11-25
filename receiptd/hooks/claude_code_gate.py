@@ -513,7 +513,8 @@ def _main_guarded() -> int:
             _LEDGER_LOCK.release()
         watchdog.cancel()
         # Wait for the timer thread to stop so it is not alive at interpreter shutdown.
-        watchdog.join()
+        # Bounded so exit can never hang on it.
+        watchdog.join(timeout=0.5)
 
 
 def _run() -> int:
