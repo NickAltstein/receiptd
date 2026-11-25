@@ -19,10 +19,13 @@ def invoke(tmp_path, data, payload=None, *, raw=None, write_scope=True):
     if write_scope:
         scope.write_text(json.dumps(data) if raw is None else raw)
     payload = payload or {'session_id': 'fixture', 'tool_name': 'Bash', 'tool_input': {'command': 'echo fixture'}}
-    env = {**os.environ, 'HOME': str(tmp_path), 'RECEIPTD_KEY_DIR': str(tmp_path / 'keys'), 'GIT_CONFIG_NOSYSTEM': '1'}
+    # PYTHONFAULTHANDLER: a native crash (e.g. SIGSEGV) dumps every thread's Python stack to stderr.
+    env = {**os.environ, 'HOME': str(tmp_path), 'RECEIPTD_KEY_DIR': str(tmp_path / 'keys'), 'GIT_CONFIG_NOSYSTEM': '1', 'PYTHONFAULTHANDLER': '1'}
     env.pop('RECEIPTD_SIGNING_KEY', None)
     env.pop('BIRKIN_SIGNING_KEY', None)
     proc = subprocess.run([sys.executable, '-m', 'receiptd.hooks.claude_code_gate', '--policy', str(POLICY), '--scope', str(scope), '--ledger', str(tmp_path / 'evidence/receipts.jsonl')], input=json.dumps(payload), text=True, capture_output=True, cwd=tmp_path, env=env, timeout=15)
+    # pytest shows this under "Captured stderr" when a test fails.
+    sys.stderr.write(f'gate exit {proc.returncode}; stderr:\n{proc.stderr}')
     receipts = [json.loads(line) for line in (tmp_path / 'evidence/receipts.jsonl').read_text().splitlines()]
     return proc.returncode, receipts[-1]
 
