@@ -8,14 +8,14 @@ This document catalogs what is implemented, what the tests cover, the security l
 
 | Component | Status | What the tests cover | Tests / evidence |
 | :--- | :---: | :--- | :--- |
-| **Fail-closed policy engine** | **Production** | Path-component containment, sibling-prefix collision, symlink resolution, relative-path rejection, fail-closed handling | `policy.py`, `test_policy_enforcement_threat_model.py` |
-| **Ed25519 receipt signing** | **Production** | Canonical JSON (sorted keys), 12 bound fields | `models.py`, `crypto.py`, `test_receipt_binding.py` |
-| **Tamper-evident audit ledger** | **Production** | SHA-256 forward-chained events, Merkle root checkpoints | `audit.py`, `test_tamper_matrix.py`, `tests/tamper-test.sh` |
-| **Offline hash-chain CLI** | **Production** | `receiptd verify` with no server | `verify.py`, `scripts/ci_smoke.sh` |
-| **Human-in-the-loop controls** | **Production** | Requesting-identity binding, signature check, duplicate transition prevention (`approve`/`reject`), argument hash binding on execution | `engine.py`, `test_policy_enforcement_threat_model.py` |
-| **INFINI action gateway** | **Production** | Decoupled pre-action step authorization gateway | `adapters/infini_gateway.py`, `test_infini_integration.py` |
+| **Fail-closed policy engine** | **Implemented + tested** | Path-component containment, sibling-prefix collision, symlink resolution, relative-path rejection, fail-closed handling | `policy.py`, `test_policy_enforcement_threat_model.py` |
+| **Ed25519 receipt signing** | **Implemented + tested** | Canonical JSON (sorted keys), 12 bound fields | `models.py`, `crypto.py`, `test_receipt_binding.py` |
+| **Tamper-evident audit ledger** | **Implemented + tested** | SHA-256 forward-chained events, Merkle root checkpoints | `audit.py`, `test_tamper_matrix.py`, `tests/tamper-test.sh` |
+| **Offline hash-chain CLI** | **Implemented + tested** | `receiptd verify` with no server | `verify.py`, `scripts/ci_smoke.sh` |
+| **Human-in-the-loop controls** | **Implemented + tested** | Requesting-identity binding, signature check, duplicate transition prevention (`approve`/`reject`), argument hash binding on execution | `engine.py`, `test_policy_enforcement_threat_model.py` |
+| **INFINI action gateway** | **Implemented + tested** | Decoupled pre-action step authorization gateway | `adapters/infini_gateway.py`, `test_infini_integration.py` |
 | **Hermes adapter** | **Demonstration** | In-process tool registry showing the interception seam (`fs.write`, `shell.exec`) | `adapters/hermes.py`, `demos/end_to_end.py` |
-| **NullAgent adapter** | **Production** | Reference minimal adapter for the AgentAdapter contract | `adapters/null_agent.py`, `test_null_adapter.py` |
+| **NullAgent adapter** | **Implemented + tested** | Reference minimal adapter for the AgentAdapter contract | `adapters/null_agent.py`, `test_null_adapter.py` |
 
 ---
 

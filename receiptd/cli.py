@@ -154,12 +154,12 @@ def pretooluse_hook_command(policy_path: str, ledger_path: str = INIT_LEDGER_PAT
     )
 
 
-def stop_hook_command(ledger_path: str = INIT_LEDGER_PATH) -> str:
-    """Stop-hook command bound to the interpreter that is running init."""
-    return hook_shell_command(
-        sys.executable,
-        ["-m", "receiptd.hooks.claude_code_stop_gate", "--ledger", ledger_path],
-    )
+def stop_hook_command(ledger_path: str = INIT_LEDGER_PATH, test_cmd: str | None = None) -> str:
+    """Stop-hook command bound to the interpreter and an explicit test command."""
+    args = ["-m", "receiptd.hooks.claude_code_stop_gate", "--ledger", ledger_path]
+    if test_cmd is not None:
+        args.extend(["--test-cmd", test_cmd])
+    return hook_shell_command(sys.executable, args)
 
 
 def probe_installed_hook(
@@ -222,6 +222,7 @@ def _replace_or_append(entries: list, entry: dict, match) -> str:
 @app.command("init")
 def init(
     claude_code: bool = typer.Option(True, "--claude-code", help="Wire .claude/settings.json PreToolUse hook gate."),
+    test_cmd: Optional[str] = typer.Option(None, "--test-cmd", help="Install the Stop hook with this test command."),
     policy_path: str = typer.Option(
         INIT_POLICY_PATH,
         "--policy-path",
@@ -229,6 +230,8 @@ def init(
     ),
 ) -> None:
     """Initialize Receiptd runtime hooks and audit structures in the local repository."""
+    if test_cmd is not None and not test_cmd.strip():
+        raise typer.BadParameter("--test-cmd must contain a command")
     typer.echo("Initializing Receiptd...")
 
     ledger_path = choose_ledger_path()
@@ -315,18 +318,7 @@ def init(
         else:
             typer.echo(f"  [✓] Wired PreToolUse deterministic gate into {settings_path}")
 
-        # 3. Wire Claude Code Stop Hook (exit 2 prevents completion while tests fail)
-        stop_hooks = hooks_config.setdefault("Stop", [])
-        stop_entry = {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": stop_hook_command(ledger_path),
-                    "onFailure": "block",
-                }
-            ]
-        }
-
+        # 3. Install a Stop hook only when the test command is explicit.
         def _is_our_stop(existing: object) -> bool:
             if not isinstance(existing, dict):
                 return False
@@ -338,14 +330,36 @@ def init(
                     return True
             return False
 
-        if any(_is_our_stop(existing) for existing in stop_hooks):
-            _replace_or_append(stop_hooks, stop_entry, _is_our_stop)
-            typer.echo(f"  [✓] Updated Stop gate command in {settings_path}")
-        elif not stop_hooks:
-            stop_hooks.append(stop_entry)
-            typer.echo(f"  [✓] Wired Stop deterministic completion gate into {settings_path}")
+        stop_hooks = hooks_config.get("Stop", [])
+        if test_cmd is None:
+            if isinstance(stop_hooks, list):
+                retained = [entry for entry in stop_hooks if not _is_our_stop(entry)]
+                if len(retained) != len(stop_hooks):
+                    typer.echo(f"  [i] Removed Stop gate without --test-cmd from {settings_path}")
+                if retained:
+                    hooks_config["Stop"] = retained
+                else:
+                    hooks_config.pop("Stop", None)
+            typer.echo("  [i] Stop gate not installed; pass --test-cmd to enable it.")
         else:
-            typer.echo("  [i] Stop hook already registered in .claude/settings.json")
+            stop_hooks = hooks_config.setdefault("Stop", [])
+            stop_entry = {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": stop_hook_command(ledger_path, test_cmd),
+                        "onFailure": "block",
+                    }
+                ]
+            }
+            if any(_is_our_stop(existing) for existing in stop_hooks):
+                _replace_or_append(stop_hooks, stop_entry, _is_our_stop)
+                typer.echo(f"  [✓] Updated Stop gate command in {settings_path}")
+            elif not stop_hooks:
+                stop_hooks.append(stop_entry)
+                typer.echo(f"  [✓] Wired Stop deterministic completion gate into {settings_path}")
+            else:
+                typer.echo("  [i] Stop hook already registered in .claude/settings.json")
 
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)

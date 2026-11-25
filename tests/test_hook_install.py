@@ -143,6 +143,7 @@ def test_init_probe_blocks_known_bad_call(tmp_path, monkeypatch):
     gate = settings["hooks"]["PreToolUse"][0]["hooks"][0]
     assert gate["command"] == pretooluse_hook_command(".receiptd/pretooluse.policy.json")
     assert gate["onFailure"] == "block"
+    assert "Stop" not in settings["hooks"]
     ledger = tmp_path / ".receiptd" / "receipts.jsonl"
     lines = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
     assert lines[0]["decision"] == "deny"
@@ -150,6 +151,36 @@ def test_init_probe_blocks_known_bad_call(tmp_path, monkeypatch):
     assert "Receiptd initialization complete." in result.output
     assert "AuditGPT" not in result.output
     assert "Zero-Trust" not in result.output
+
+
+def test_init_installs_stop_only_with_explicit_test_command(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("RECEIPTD_KEY_DIR", str(tmp_path / "keys"))
+
+    enabled = runner.invoke(app, ["init", "--claude-code", "--test-cmd", "true"])
+    assert enabled.exit_code == 0, enabled.output
+    settings_path = tmp_path / ".claude" / "settings.json"
+    settings = json.loads(settings_path.read_text())
+    command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert "receiptd.hooks.claude_code_stop_gate" in command
+    assert "--test-cmd true" in command
+    assert subprocess.run(command, shell=True, input="{}", text=True, cwd=tmp_path).returncode == 0
+
+    other_stop = {"hooks": [{"type": "command", "command": "other-stop-hook"}]}
+    settings["hooks"]["Stop"].append(other_stop)
+    settings_path.write_text(json.dumps(settings))
+    disabled = runner.invoke(app, ["init", "--claude-code"])
+    assert disabled.exit_code == 0, disabled.output
+    settings = json.loads(settings_path.read_text())
+    assert settings["hooks"]["Stop"] == [other_stop]
+
+
+def test_init_rejects_empty_stop_test_command(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "--claude-code", "--test-cmd", " "])
+    assert result.exit_code != 0
+    assert not (tmp_path / ".claude" / "settings.json").exists()
 
 
 def test_init_keeps_existing_birkin_ledger(tmp_path, monkeypatch):
