@@ -187,6 +187,8 @@ def test_concurrent_gate_invocations_maintain_valid_ledger(tmp_path: Path):
         **os.environ,
         "HOME": str(tmp_path),
         "RECEIPTD_KEY_DIR": str(tmp_path / "keys"),
+        # A native crash (e.g. SIGSEGV) dumps every thread's Python stack to stderr.
+        "PYTHONFAULTHANDLER": "1",
     }
     ledger = tmp_path / "receipts.jsonl"
 
@@ -204,7 +206,7 @@ def test_concurrent_gate_invocations_maintain_valid_ledger(tmp_path: Path):
             cwd=tmp_path,
             env=env,
         )
-        assert res.returncode == 0
+        assert res.returncode == 0, f"gate {idx} exited {res.returncode}; stderr:\n{res.stderr}"
 
     with ThreadPoolExecutor(max_workers=8) as ex:
         list(ex.map(run_one, range(20)))

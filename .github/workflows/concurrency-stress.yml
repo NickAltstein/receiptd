@@ -1,0 +1,53 @@
+name: Concurrent gate stress (macOS)
+
+# Repeats the concurrent-gate ledger test on macOS, where a gate subprocess
+# crashed with SIGSEGV on main (run 45692713408). Every iteration must pass.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "receiptd/**"
+      - "tests/test_claude_code_gate.py"
+      - ".github/workflows/concurrency-stress.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    name: concurrent gate x20 (macos-latest / py${{ matrix.python-version }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run the concurrent gate test 20 times
+        run: |
+          failures=0
+          for i in $(seq 1 20); do
+            echo "::group::iteration $i"
+            if ! python -m pytest -q -rs tests/test_claude_code_gate.py -k test_concurrent_gate_invocations_maintain_valid_ledger; then
+              failures=$((failures + 1))
+              echo "::error::iteration $i failed"
+            fi
+            echo "::endgroup::"
+          done
+          echo "failed iterations: $failures / 20"
+          test "$failures" -eq 0
