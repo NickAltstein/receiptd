@@ -1,0 +1,164 @@
+{
+  "format": "receiptd.pretooluse.v1",
+  "description": "Example: the default PreToolUse rules, three rules that deny writes to the ledger and its anchor, and an opt-in taint ratchet. A call that fetches untrusted external input raises the label untrusted_external for the session; while it is active, the sink rules deny the call. See docs/taint-ratchet.md.",
+  "base_score": 10,
+  "deny_at": 75,
+  "rules": [
+    {
+      "id": "POL-01:ENV_EXFILTRATION",
+      "weight": 95,
+      "ignore_case": true,
+      "pattern": "(?s)\\A(?=.*(?:\\b(?:cat|tar|head|tail|sed|awk|grep|scp|rsync)\\s+[^\\n;&|]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|@[^\\s\"\\x27]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|(?:-T|--upload-file)(?:\\s+|=)[\"\\x27]?[^\\s\"\\x27]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|\\bopen\\(\\s*\\\\?[\"\\x27][^\\n]*?(?:\\.(?:ssh|aws|config/gcloud)(?=[/\\s\"\\x27;|]|$)|\\.netrc\\b|(?<![\\w.])\\.env(?!\\.example\\b)(?=[.\\s\"\\x27;|]|$)|\\.pem\\b|\\bkeychain\\b|\\bid_(?:rsa|ed25519)(?!\\.pub)\\b|\\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|PRIVATE_KEY)\\b)|\\benv\\s*(?=\\|)|\\bprintenv\\s*(?=\\|)))(?=.*(?:\\bcurl(?=\\s)[^\\n;&|]*?(?:\\s(?:-d|-F|-T|--data(?:-binary|-raw|-urlencode)?|--form|--upload-file)(?=[\\s=]|$))|\\bwget(?=\\s)[^\\n;&|]*?\\s--(?:post|body)-(?:data|file)(?=[\\s=]|$)|\\b(?:nc|ncat|netcat)\\b(?![^\\n;&|]*\\s-z\\b)\\s+|\\b(?:scp|rsync)\\s+[^\\n]*?(?:[\\w.-]+@)?[\\w.-]+:|\\brequests\\s*\\.\\s*(?:post|put|patch)\\s*\\())",
+      "scope": "shell_command"
+    },
+    {
+      "id": "POL-02:DESTRUCTIVE_DDL_OR_FS",
+      "weight": 90,
+      "ignore_case": true,
+      "pattern": "(\\bDROP\\s+TABLE\\b|\\bDROP\\s+DATABASE\\b|\\bTRUNCATE\\b|\\bDELETE\\s+FROM\\b(?![^;]*\\bWHERE\\b)|rm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*[rf]{2}[a-zA-Z]*|--recursive\\s+--force|--force\\s+--recursive)\\s+[/~*]|\\bfind\\s+.*\\s+-delete\\b|\\bgit\\s+push\\s+.*(--force|-f\\b|\\+)|mkfs|/etc/passwd)"
+    },
+    {
+      "id": "POL-03:PRIVILEGE_ESCALATION",
+      "weight": 85,
+      "ignore_case": true,
+      "pattern": "(\\bsudo\\b|chmod\\s+777|chown\\s+root|\\.claude/settings(\\.local)?\\.json)"
+    },
+    {
+      "id": "POL-04:WORKFLOW_PROTECTED_KEYS",
+      "weight": 85,
+      "ignore_case": false,
+      "pattern": "^(?:-\\s+)?(?:run|uses|permissions|'run'|'uses'|'permissions'|\"run\"|\"uses\"|\"permissions\")\\s*:",
+      "scope": "workflow_edit"
+    },
+    {
+      "id": "POL-05:PERSISTENCE_PATH",
+      "weight": 85,
+      "ignore_case": false,
+      "scope": "write_path",
+      "pattern": "(?:^|/)(?:\\.bashrc|\\.zshrc|\\.profile)$|(?:^|/)\\.git/hooks/[^/]+$|(?:^|/)(?:Library/Launch(?:Agents|Daemons)|etc/(?:systemd/system|cron\\.d)|\\.config/systemd/user)/[^/]+$|^/etc/crontab$"
+    },
+    {
+      "id": "POL-06:DOWNLOAD_EXECUTION",
+      "weight": 90,
+      "ignore_case": false,
+      "scope": "shell_command",
+      "pattern": "(?:\\b(?:curl|wget|fetch)(?=\\s)|\\bbase64\\s+(?:-d\\b|--decode\\b))[^\\n;]*?\\|(?!\\|)\\s*(?:[^\\s|;&]+/)?(?:sh|bash|zsh|dash|python(?:[23](?:\\.\\d+)?)?|node)\\b|(?:[^\\s|;&]+/)?(?:sh|bash|zsh|dash|python(?:[23](?:\\.\\d+)?)?|node)\\b\\s+(?:-[\\w-]+\\s+)*(?:[\"\\x27])?(?:<\\(|\\$\\()\\s*(?:[^\\s]+/)?\\b(?:curl|wget|fetch)(?=\\s)|\\b(?:curl|wget|fetch)(?=\\s)[^\\n;&|]*?(?:&&|;)\\s*(?:(?:[^\\s]+/)?chmod\\s+(?:[augo]*\\+x|[0-7]{3,4})\\s+[^\\n;&|]+|(?:[^\\s|;&]+/)?(?:sh|bash|zsh|dash|python(?:[23](?:\\.\\d+)?)?|node)\\b\\s+(?:\\./|/tmp/|/var/tmp/)|(?:\\./|/tmp/|/var/tmp/)\\S+)"
+    },
+    {
+      "id": "POL-07:REMOTE_SHELL",
+      "weight": 90,
+      "ignore_case": false,
+      "scope": "shell_command",
+      "pattern": "\\b(?:bash|sh)\\s+[^\\n;|]*?-i\\b[^\\n;|]*?/dev/tcp/|\\b(?:nc|ncat|netcat)\\s+[^\\n;|]*?\\s?-(?:e|c)(?:\\s|=)|\\bsocat\\s+[^\\n;|]*?\\bexec:|(?=[^\\n]*\\bmkfifo\\b)(?=[^\\n]*\\b(?:nc|ncat|netcat)\\b)[^\\n]*\\||\\b(?:python(?:[23](?:\\.\\d+)?)?|perl|ruby)\\s+[^\\n;]*?\\s?-c\\b(?=[^\\n]*\\bsocket\\b)(?=[^\\n]*\\b(?:pty|dup2)\\b)"
+    },
+    {
+      "id": "POL-08:SHELL_PERSISTENCE",
+      "weight": 90,
+      "ignore_case": false,
+      "scope": "shell_command",
+      "pattern": "(?:>{1,2}\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)|\\b(?:cp|mv|install)\\s+[^\\n;&|]*?\\s*[\"\\x27]?(?:[^\\s\"\\x27;&|]*/)?(?:\\.bashrc|\\.zshrc|\\.profile|\\.git/hooks/[^\\s\"\\x27;&|]+)(?=[\\s\"\\x27;&|]|$)[\"\\x27]?\\s*(?=[;&|\\n]|$)|\\bcrontab\\s+-(?=\\s*(?:[<;&|]|$))|\\bsystemctl\\s+--user\\s+enable\\b)"
+    },
+    {
+      "id": "LEDGER-01:WRITE_PATH",
+      "weight": 100,
+      "ignore_case": false,
+      "scope": "write_path",
+      "pattern": "\\.receiptd(?:/|$)|(?:^|/)\\.?(?:receipts\\.jsonl|ledger_state\\.json)(?:\\.lock)?$"
+    },
+    {
+      "id": "LEDGER-02:SHELL_MUTATION",
+      "weight": 100,
+      "ignore_case": true,
+      "scope": "shell_command",
+      "pattern": "(?s)\\A(?=.*?(?:\\.receiptd(?![\\w-])|(?<![\\w-])\\.?(?:receipts\\.jsonl|ledger_state\\.json)(?:\\.lock)?(?![\\w.-])))(?=.*?(?:\\b(?:rm|rmdir|mv|cp|ln|install|chmod|chown|touch|truncate|mkdir|tee|dd|split|csplit|shred|sed|perl|awk|gawk|python[23]?(?:\\.\\d+)?|pypy3?|ruby|node|bash|sh|zsh|dash|ksh|xargs|find)\\b|(?<![\\w$=~:-])>{1,2}(?!\\s*(?:&|/dev/null\\b))|\\breceiptd\\s+anchor\\b))"
+    },
+    {
+      "id": "LEDGER-03:SELF_PROTECTION",
+      "weight": 100,
+      "ignore_case": false,
+      "scope": "self_protection",
+      "pattern": ".*"
+    }
+  ],
+  "taint": {
+    "sources": [
+      {
+        "id": "TAINT-SRC:WEB",
+        "labels": [
+          "untrusted_external"
+        ],
+        "tool": [
+          "WebFetch",
+          "WebSearch"
+        ],
+        "pattern": ""
+      },
+      {
+        "id": "TAINT-SRC:NET_FETCH",
+        "labels": [
+          "untrusted_external"
+        ],
+        "tool": [
+          "Bash"
+        ],
+        "scope": "shell_command",
+        "pattern": "\\b(?:curl|wget|fetch)\\b"
+      },
+      {
+        "id": "TAINT-SRC:READ_OUTSIDE_WORKSPACE",
+        "labels": [
+          "untrusted_external"
+        ],
+        "scope": "read_path_outside_workspace"
+      }
+    ],
+    "sinks": [
+      {
+        "id": "TAINT-SINK:EGRESS",
+        "labels": [
+          "untrusted_external"
+        ],
+        "tool": [
+          "Bash"
+        ],
+        "scope": "shell_command",
+        "pattern": "\\b(?:nc|ncat|netcat|socat|ssh|scp|sftp|rsync)\\b|\\bcurl\\b[^\\n|;&]*\\s(?:-d|-F|-T|--data|--data-binary|--data-raw|--data-urlencode|--form|--upload-file)(?=[\\s=]|$)|\\bwget\\b[^\\n|;&]*\\s--(?:post|body)-(?:data|file)\\b|/dev/(?:tcp|udp)/"
+      },
+      {
+        "id": "TAINT-SINK:GIT_PUSH",
+        "labels": [
+          "untrusted_external"
+        ],
+        "tool": [
+          "Bash"
+        ],
+        "scope": "shell_command",
+        "pattern": "\\bgit\\b[^\\n|;&]*\\s+push\\b"
+      },
+      {
+        "id": "TAINT-SINK:GH",
+        "labels": [
+          "untrusted_external"
+        ],
+        "tool": [
+          "Bash"
+        ],
+        "scope": "shell_command",
+        "pattern": "\\bgh\\s+(?:pr|issue|api|release|gist|secret|repo)\\b"
+      },
+      {
+        "id": "TAINT-SINK:CONFIG_WRITE",
+        "labels": [
+          "untrusted_external"
+        ],
+        "tool": [
+          "Write",
+          "Edit",
+          "MultiEdit"
+        ],
+        "scope": "write_path",
+        "pattern": "(?:^|/)(?:package\\.json|\\.npmrc|pip\\.conf|pyproject\\.toml|setup\\.cfg|\\.pre-commit-config\\.ya?ml)$"
+      }
+    ]
+  }
+}
