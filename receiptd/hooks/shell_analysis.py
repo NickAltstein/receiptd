@@ -291,12 +291,58 @@ def persistence_path(path: str, cwd: Path, hooks_root: Path | None) -> bool:
                                       or absolute.resolve() == hooks_root or hooks_root in absolute.resolve().parents)
 
 
-def matches_remote_shell(command: str, pattern: re.Pattern[str]) -> bool:
+_PY_CMD_RE = re.compile(r"^python(?:[23](?:\.\d+)?)?$")
+_PY_SOCKET_RE = re.compile(r"\bsocket\b", re.I)
+_PY_CONNECT_RE = re.compile(r"\.(?:connect|create_connection)\s*\(", re.I)
+_PY_EXEC_RE = re.compile(r"\b(?:subprocess|os\s*\.\s*system|pty|dup2)\b", re.I)
+_PY_PTY_RE = re.compile(r"\b(?:pty|dup2)\b", re.I)
+
+
+def _is_python_remote_shell(code: str) -> bool:
+    if not _PY_SOCKET_RE.search(code):
+        return False
+    if _PY_PTY_RE.search(code):
+        return True
+    has_exec = bool(_PY_EXEC_RE.search(code) or re.search(r"\bfrom\s+os\s+import\b[^\n]*\bsystem\b", code))
+    return bool(_PY_CONNECT_RE.search(code) and has_exec)
+
+
+def _python_script_arg(exposed: list[str]) -> tuple[str | None, str | None]:
+    """Return (script_path, inline_code) for a python* invocation."""
+    args = exposed[1:]
+    consumes = {"-W", "-X", "--check-hash-based-pycs"}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "-c":
+            return None, args[i + 1] if i + 1 < len(args) else ""
+        if arg.startswith("-c") and len(arg) > 2:
+            return None, arg[2:]
+        if arg == "-m" or arg.startswith("-m"):
+            return None, None
+        if arg == "-":
+            return None, None
+        if arg in consumes:
+            i += 2
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        return arg, None
+    return None, None
+
+
+def matches_remote_shell(command: str, pattern: re.Pattern[str], cwd: Path | None = None) -> bool:
+    active_cwd = cwd if cwd is not None else Path.cwd()
+    home = os.environ.get("HOME", "/home/user")
     for words in command_views(command):
         exposed = _unwrap(words)
         if not exposed:
             continue
         name = Path(exposed[0]).name
+        if name == "cd" and len(exposed) == 2:
+            active_cwd = (active_cwd / _expand(exposed[1], {"HOME": home})).resolve(strict=True)
+            continue
         # Includes the v1.4 executable-path miss, and redirects of every fd.
         if re.match(r"^/dev/(?:tcp|udp)/", exposed[0]):
             return True
@@ -307,6 +353,21 @@ def matches_remote_shell(command: str, pattern: re.Pattern[str]) -> bool:
             return True
         if name == "socat" and any(re.match(r"(?:exec|system):", w, re.I) for w in exposed[1:]):
             return True
+        if _PY_CMD_RE.fullmatch(name):
+            script_arg, inline_code = _python_script_arg(exposed)
+            if inline_code is not None and _is_python_remote_shell(inline_code):
+                return True
+            if script_arg is not None:
+                expanded = _expand(script_arg, {"HOME": home})
+                target = (active_cwd / expanded).resolve(strict=True)
+                if not target.is_file():
+                    raise ValueError("python script target is not a file")
+                data = target.read_bytes()
+                if len(data) > MAX_TEXT:
+                    raise ValueError("python script exceeds static inspection limit")
+                text = data.decode("utf-8")
+                if _is_python_remote_shell(text) or pattern.search(text):
+                    return True
         # Preserve other pre-existing remote-shell indicators.
         if pattern.search(" ".join(words)):
             return True

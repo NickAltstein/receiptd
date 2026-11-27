@@ -416,19 +416,19 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protect
     for rule in policy.rules:
         if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain"):
             try:
-                if rule.scope in ("persistence_action", "self_protection"):
+                if rule.scope in ("persistence_action", "self_protection", "remote_shell"):
                     cwd = payload.get("cwd")
                     workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
                     if rule.scope == "self_protection":
                         paths = protected_paths + (default_policy_path(), get_key_dir(),
                             workspace / ".receiptd", workspace / ".birkin")
                         matched = matches_self_protection(command, tool_name, tool_input, workspace, paths)
-                    else:
+                    elif rule.scope == "persistence_action":
                         matched = matches_persistence(command, tool_name, tool_input, workspace)
+                    else:
+                        matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern, cwd=workspace)
                 elif rule.scope == "supply_chain":
                     matched = isinstance(command, str) and supply_chain_match(command)
-                else:
-                    matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern)
             except (OSError, ValueError, RuntimeError, configparser.Error):
                 # An incomplete static inspection must not allow a call.
                 matched = True

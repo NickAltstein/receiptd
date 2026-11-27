@@ -49,7 +49,7 @@
       "weight": 90,
       "ignore_case": true,
       "scope": "remote_shell",
-      "pattern": "\\b(?:bash|sh)\\s+[^\\n;|]*?-i\\b[^\\n;|]*?/dev/tcp/|\\b(?:nc|ncat|netcat)\\s+[^\\n;|]*?\\s?-(?:e|c)(?:\\s|=)|\\bsocat\\s+[^\\n;|]*?\\bexec:|(?=[^\\n]*\\bmkfifo\\b)(?=[^\\n]*\\b(?:nc|ncat|netcat)\\b)[^\\n]*\\||\\b(?:python(?:[23](?:\\.\\d+)?)?|perl|ruby)\\s+[^\\n;]*?\\s?-[ceE]\\b(?=[^\\n]*\\bsocket\\b)(?=[^\\n]*\\b(?:pty|dup2)\\b)"
+      "pattern": "\\b(?:bash|sh)\\s+[^\\n;|]*?-i\\b[^\\n;|]*?/dev/tcp/|\\b(?:nc|ncat|netcat)\\s+[^\\n;|]*?\\s?-(?:e|c)(?:\\s|=)|\\bsocat\\s+[^\\n;|]*?\\bexec:|(?=[^\\n]*\\bmkfifo\\b)(?=[^\\n]*\\b(?:nc|ncat|netcat)\\b)[^\\n]*\\||\\b(?:python(?:[23](?:\\.\\d+)?)?|perl|ruby)\\s+[^\\n;]*?\\s?-[ceE]\\b(?=[^\\n]*\\bsocket\\b)(?=[^\\n]*\\b(?:pty|dup2|subprocess|os\\.system)\\b)"
     },
     {
       "id": "POL-08:SHELL_PERSISTENCE",
