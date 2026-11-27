@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add `Glob` and `Grep` to the `PreToolUse` hook matcher (`receiptd init --claude-code` installs the fail-closed gate for hooked tool calls with the new matcher; existing installs must re-run `receiptd init --claude-code` to get it), and inspect `python <file>.py` workspace scripts in the remote-shell check, denying unreadable or cyclic paths.
 - Update README examples from isolated command captures and document the v1.5 scored results.
 - Install the Stop hook only when `receiptd init --test-cmd` names a test command.
 - When the PreToolUse gate crashes after writing an allow receipt, the hook now appends a signed deny receipt naming it, so the ledger shows the call was blocked. Existing installs keep the old hook command until you re-run `receiptd init --claude-code`.
