@@ -1,0 +1,90 @@
+{
+  "status": "pending_approval",
+  "scoring_authorized": false,
+  "scoring_rule": "score once, publish misses, no regrades, report per model and corpus strictly separated",
+  "gate_implementation": {
+    "policy": "receiptd/hooks/v1_6.policy.json",
+    "policy_sha256": "878e5545249e32fc75bd82daaecb12646ff614d00753bffc1ff6fbcd5ffae789",
+    "gate_script": "receiptd/hooks/claude_code_gate.py",
+    "gate_script_sha256": "50a730bc1aa72b71ebc8907789de2d3bf9013f43c55c204fd1ce25feaa07bdca",
+    "shell_analysis": "receiptd/hooks/shell_analysis.py",
+    "shell_analysis_sha256": "0551ee468201faa21866141ce4fae43bec1e75d8b3ba157cd8cf710c3ff93708",
+    "session_controls": "receiptd/hooks/session_controls.py",
+    "session_controls_sha256": "4e13b9a6903846637448506891d584f7e465fd0a67f5bed19c3f0aad7ac3209b",
+    "sensitive_paths": "receiptd/hooks/sensitive_paths.py",
+    "sensitive_paths_sha256": "6b4241f26a9e97928c570202b6c1f150d1ff98fa3312f3e0d3b68942c71cec4b",
+    "cli": "receiptd/cli.py",
+    "cli_sha256": "8d58a41924ae30c05ddf9637580378bbe6a28b693ecd900c968dee5d6cca7344",
+    "pretooluse_matcher": "Bash|Write|Edit|MultiEdit|Read|Glob|Grep|mcp__.*"
+  },
+  "eval_implementation": {
+    "grader": "eval/v1_6/grader.py",
+    "grader_sha256": "879351b7dc8d6c2b86c7ce2e65d7fb9cb0bf8ffd04d53a393b9479d60ed448a7",
+    "execution": "eval/v1_6/execution.py",
+    "execution_sha256": "df6d7ec936012c053a5f7a2bdb22b86fba4fc6ad9039cba1f65cdd16b99e5f35",
+    "runner": "eval/v1_6/runner.py",
+    "runner_sha256": "e35bed9de142770e1a97899178ca16abd71e2ba57da304a4dcd723cc7eef5c01",
+    "runner_hook_matcher": "Bash|Write|Edit|MultiEdit|Read|Glob|Grep|mcp__.*"
+  },
+  "corpora": {
+    "regression_main_set": {
+      "path": "eval/v1_5/main-attack-manifest.json",
+      "sha256": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+      "cases": 40,
+      "cases_per_category": 8,
+      "regression_only": true
+    },
+    "regression_externally_supplied_set": {
+      "path": "eval/v1_5/externally-supplied-cases.json",
+      "sha256": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680",
+      "cases": 10,
+      "authorship_label": "externally supplied, policy-author-exposed evaluation cases",
+      "regression_only": true
+    },
+    "heldout_manifest": {
+      "path": "eval/v1_6/heldout-hash-manifest.json",
+      "sha256": "284e5e913d1cb49c48439ed2a57e5dcc8b7021550263044bb5b2b1751ffb72f8",
+      "cases": 48,
+      "private_corpus_sha256": "2502d6604881e31d61f1765131df224165e13284f2827dd755f6bfb9d3d085a5",
+      "generator_model": "mistral:7b",
+      "generator_model_digest": "sha256:6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf"
+    },
+    "case_bindings": {
+      "path": "eval/v1_6/case-bindings.json",
+      "sha256": "d8f221dabd1f638355d1a2dad4f425ff9e07b59cc72a04b9397877edfa0d10c4"
+    }
+  },
+  "evaluated_models": {
+    "ollama_version": "0.40.16",
+    "qwen2.5:7b": "sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
+    "llama3.1:8b": "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e"
+  },
+  "vm": {
+    "limactl_version": "2.3.0",
+    "vm_type": "vz",
+    "arch": "aarch64",
+    "template": "eval/v1_6/lima-vm.yaml",
+    "template_sha256": "26c2a47596ee3ef2fd56548781b5ca7b5e2a01ebde7c6f18b8760d2a19d481db",
+    "image_url": "https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img",
+    "image_digest": "sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e",
+    "mounts": []
+  },
+  "all_artifact_sha256": {
+    "receiptd/hooks/v1_6.policy.json": "878e5545249e32fc75bd82daaecb12646ff614d00753bffc1ff6fbcd5ffae789",
+    "receiptd/hooks/claude_code_gate.py": "50a730bc1aa72b71ebc8907789de2d3bf9013f43c55c204fd1ce25feaa07bdca",
+    "receiptd/hooks/shell_analysis.py": "0551ee468201faa21866141ce4fae43bec1e75d8b3ba157cd8cf710c3ff93708",
+    "receiptd/hooks/session_controls.py": "4e13b9a6903846637448506891d584f7e465fd0a67f5bed19c3f0aad7ac3209b",
+    "receiptd/hooks/sensitive_paths.py": "6b4241f26a9e97928c570202b6c1f150d1ff98fa3312f3e0d3b68942c71cec4b",
+    "receiptd/cli.py": "8d58a41924ae30c05ddf9637580378bbe6a28b693ecd900c968dee5d6cca7344",
+    "eval/v1_6/PLAN.md": "5bd37190d26086b8cbb32742dfd5231063d366df839d42064b8a6efe7e5bc738",
+    "eval/v1_6/INPUTS.md": "18bb7d7edc2ba61a06ddafaebd0212f8ed396a35bbde38d55490de925543f00a",
+    "eval/v1_6/heldout-hash-manifest.json": "284e5e913d1cb49c48439ed2a57e5dcc8b7021550263044bb5b2b1751ffb72f8",
+    "eval/v1_6/case-bindings.json": "d8f221dabd1f638355d1a2dad4f425ff9e07b59cc72a04b9397877edfa0d10c4",
+    "eval/v1_6/lima-vm.yaml": "26c2a47596ee3ef2fd56548781b5ca7b5e2a01ebde7c6f18b8760d2a19d481db",
+    "eval/v1_6/grader.py": "879351b7dc8d6c2b86c7ce2e65d7fb9cb0bf8ffd04d53a393b9479d60ed448a7",
+    "eval/v1_6/execution.py": "df6d7ec936012c053a5f7a2bdb22b86fba4fc6ad9039cba1f65cdd16b99e5f35",
+    "eval/v1_6/runner.py": "e35bed9de142770e1a97899178ca16abd71e2ba57da304a4dcd723cc7eef5c01",
+    "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
+    "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680"
+  }
+}

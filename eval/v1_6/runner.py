@@ -80,6 +80,29 @@ def verify_heldout_manifest(manifest_data: dict[str, Any], corpus_raw: bytes) ->
             raise ValueError(f"held-out case hash mismatch for {cid}")
 
 
+def verify_artifact_pins(repo_root: Path) -> dict[str, str]:
+    """Verify every artifact listed in eval/v1_6/PINS.json before any model call."""
+    pins_path = repo_root / "eval/v1_6/PINS.json"
+    if not pins_path.is_file():
+        raise ValueError("missing pinned file: eval/v1_6/PINS.json")
+    pins = json.loads(pins_path.read_text(encoding="utf-8"))
+    all_pins = pins.get("all_artifact_sha256")
+    if not isinstance(all_pins, dict) or not all_pins:
+        raise ValueError("eval/v1_6/PINS.json missing all_artifact_sha256")
+    actuals: dict[str, str] = {}
+    for rel, expected in all_pins.items():
+        if not expected or str(expected).startswith("TODO"):
+            raise ValueError(f"unresolved pin for {rel}: {expected}")
+        path = repo_root / rel
+        if not path.is_file():
+            raise ValueError(f"missing pinned file: {rel}")
+        actual = sha256_file(path)
+        if actual != expected:
+            raise ValueError(f"pin mismatch for {rel}: expected {expected}, got {actual}")
+        actuals[rel] = actual
+    return actuals
+
+
 def validate_case_bindings(
     bindings_data: dict[str, Any],
     expected_case_ids: set[str],
@@ -89,19 +112,26 @@ def validate_case_bindings(
     main_cases = bindings_data.get("main_cases", {})
     exposed_cases = bindings_data.get("externally_supplied_cases", {})
     heldout_cases = bindings_data.get("heldout_cases", {})
-    all_bound = {**main_cases, **exposed_cases, **heldout_cases}
+    regression_bound = {**main_cases, **exposed_cases}
 
     for cid in expected_case_ids:
-        b = all_bound.get(cid)
-        if not isinstance(b, dict):
-            missing.append(f"{cid}:missing_binding_entry")
-            continue
-        for key in REQUIRED_CASE_BINDINGS:
-            val = b.get(key)
-            if val is None or val == "":
-                missing.append(f"{cid}:missing_{key}")
+        if cid in regression_bound:
+            b = regression_bound[cid]
+            if not isinstance(b, dict):
+                missing.append(f"{cid}:missing_binding_entry")
                 continue
-        validate_binding(b)
+            for key in REQUIRED_CASE_BINDINGS:
+                val = b.get(key)
+                if val is None or val == "":
+                    missing.append(f"{cid}:missing_{key}")
+                    continue
+            validate_binding(b)
+        elif cid in heldout_cases:
+            b = heldout_cases[cid]
+            if not isinstance(b, dict) or not b.get("id") or not b.get("category") or not b.get("sha256"):
+                missing.append(f"{cid}:missing_heldout_hash_binding")
+        else:
+            missing.append(f"{cid}:missing_binding_entry")
     return missing
 
 
@@ -166,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         return hook_wrapper()
 
     repo_root = args.repo_root.resolve()
+    verify_artifact_pins(repo_root)
     if not args.execute_approved_plan:
         parser.error("refusing execution: pass --execute-approved-plan <sha256>")
     plan_sha = sha256_file(repo_root / "eval/v1_6/PLAN.md")
@@ -173,7 +204,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"plan SHA-256 mismatch: expected {args.execute_approved_plan}, got {plan_sha}")
     if not args.output:
         parser.error("--execute-approved-plan requires --output")
-    raise SystemExit("v1.6 pre-score pins are not locked yet; pin PR must land before scored execution")
+    pins = json.loads((repo_root / "eval/v1_6/PINS.json").read_text(encoding="utf-8"))
+    if not pins.get("scoring_authorized"):
+        raise SystemExit("scoring_authorized is false in eval/v1_6/PINS.json")
+    raise SystemExit("v1.6 VM execution requires Nick's approval of PINS.json and PLAN.md")
 
 
 if __name__ == "__main__":
