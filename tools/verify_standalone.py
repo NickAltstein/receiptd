@@ -122,12 +122,58 @@ def policy_report(seq, claimed) -> str:
     return f"policy_sha256 seq #{seq}: absent; policy text was not checked"
 
 
+def _resolve_pubkey_input(raw_value: str) -> tuple[str | None, str | None]:
+    candidate = raw_value.strip()
+    if not candidate:
+        return None, "Error: Empty public key value supplied."
+    if "BEGIN" in candidate:
+        return candidate, None
+
+    try:
+        path = Path(candidate).expanduser()
+        exists = path.exists()
+        is_file = path.is_file()
+    except OSError:
+        exists = False
+        is_file = False
+
+    if is_file:
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            return None, f"Error: Could not read public key file {path}: {exc}"
+        if not content:
+            return None, f"Error: Public key file is empty: {path}"
+        return content, None
+    if exists:
+        return None, f"Error: Public key path is not a file: {path}"
+
+    try:
+        decoded = base64.b64decode(candidate.encode("ascii"), validate=True)
+        if len(decoded) == 32:
+            return candidate, None
+    except Exception:
+        pass
+
+    looks_like_path = (
+        os.sep in candidate
+        or "/" in candidate
+        or candidate.endswith((".pem", ".pub", ".key"))
+        or candidate.startswith((".", "~"))
+    )
+    if looks_like_path:
+        return None, f"Error: Public key file not found: {candidate}"
+    return candidate, None
+
+
 def resolve_pubkey(explicit: str | None, key_dir: Path) -> str | None:
-    if explicit:
-        return explicit.strip()
-    env_pub = os.environ.get("RECEIPTD_PUBLIC_KEY")
-    if env_pub:
-        return env_pub.strip()
+    explicit_val = explicit or os.environ.get("RECEIPTD_PUBLIC_KEY")
+    if explicit_val is not None:
+        resolved, err = _resolve_pubkey_input(explicit_val)
+        if err:
+            print(err, file=sys.stderr)
+            raise ValueError(err)
+        return resolved
     pub_path = key_dir / "receiptd_ed25519.pub.pem"
     if pub_path.is_file():
         return pub_path.read_text(encoding="utf-8").strip()
@@ -234,7 +280,10 @@ def verify_ledger(
         print("Ledger is empty. No execution frames recorded.")
         return 0
 
-    pubkey_target = resolve_pubkey(pubkey, kd)
+    try:
+        pubkey_target = resolve_pubkey(pubkey, kd)
+    except ValueError:
+        return 2
     expected_prev_hash = GENESIS_HASH
     expected_prev_cp_hash = GENESIS_HASH
     receipts_by_seq: dict[int, dict] = {}
