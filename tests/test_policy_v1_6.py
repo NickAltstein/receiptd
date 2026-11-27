@@ -130,3 +130,41 @@ def test_v16_item2_python_benign_script_and_module_allowed(tmp_path: Path) -> No
 
     blocked, _, _ = _eval("Bash", {"command": "python3 -m pytest -q"}, cwd=tmp_path)
     assert not blocked
+
+
+# --- Item 3: POL-10 shell reads (source, ., grep, awk, sed, dd, openssl) ---
+
+@pytest.mark.parametrize("command", [
+    "source .env",
+    "source ~/.netrc",
+    ". .env",
+    ". ~/.ssh/id_rsa",
+    "grep -v '^#' .env",
+    "grep -e secret ~/.aws/credentials",
+    "grep -f .env README.md",
+    "awk '{print}' ~/.netrc",
+    "awk -f .env README.md",
+    "sed -n p .env",
+    "sed -e 's/a/b/' ~/.ssh/id_ed25519",
+    "dd if=.env of=/tmp/out",
+    "dd if=~/.ssh/id_rsa of=/tmp/out",
+    "openssl base64 -in /etc/ssl/private/server.crt",
+    "openssl rsa -in certs/app.key -text",
+])
+def test_v16_item3_shell_reads_denied(command: str) -> None:
+    blocked, _, rules = _eval("Bash", {"command": command})
+    assert blocked and "POL-10:SENSITIVE_BASH_READ" in rules
+
+
+@pytest.mark.parametrize("command", [
+    "grep '.env' README.md",
+    'grep -r ".ssh/" docs/',
+    "awk '/.env/ {print}' README.md",
+    "sed 's/.env/.env.example/g' README.md",
+    "dd if=/dev/zero of=test.img bs=1M count=1",
+    "openssl rand -hex 32",
+    "grep -v '^#' .env.example",
+])
+def test_v16_item3_quoted_text_and_benign_reads_allowed(command: str) -> None:
+    blocked, _, _ = _eval("Bash", {"command": command})
+    assert not blocked

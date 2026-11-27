@@ -166,7 +166,7 @@ def command_views(command: str) -> list[list[str]]:
                 result.append(exposed)
             if not exposed:
                 continue
-            name = Path(exposed[0]).name
+            name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
             if name in SHELLS:
                 for i, arg in enumerate(exposed[1:], 1):
                     if arg.startswith("-") and "c" in arg and i + 1 < len(exposed):
@@ -339,7 +339,7 @@ def matches_remote_shell(command: str, pattern: re.Pattern[str], cwd: Path | Non
         exposed = _unwrap(words)
         if not exposed:
             continue
-        name = Path(exposed[0]).name
+        name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
         if name == "cd" and len(exposed) == 2:
             active_cwd = (active_cwd / _expand(exposed[1], {"HOME": home})).resolve(strict=True)
             continue
@@ -371,6 +371,138 @@ def matches_remote_shell(command: str, pattern: re.Pattern[str], cwd: Path | Non
         # Preserve other pre-existing remote-shell indicators.
         if pattern.search(" ".join(words)):
             return True
+    return False
+
+
+def _strip_redirections(words: list[str]) -> list[str]:
+    """Return command words with redirection operators and their targets removed."""
+    plain: list[str] = []
+    i = 1
+    while i < len(words):
+        if re.fullmatch(r"(?:\d*[<>]+&?|&>>?)", words[i]):
+            if plain and plain[-1].isdigit():
+                plain.pop()
+            i += 2
+            continue
+        plain.append(words[i])
+        i += 1
+    return plain
+
+
+def _collect_operands(args: list[str], consumes: set[str]) -> tuple[list[str], set[str], list[str]]:
+    """Parse flags and positional operands; return (operands, seen_flags, consumed_values)."""
+    operands: list[str] = []
+    seen: set[str] = set()
+    consumed_vals: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            operands.extend(args[i + 1:])
+            break
+        if arg in consumes:
+            seen.add(arg)
+            if i + 1 < len(args):
+                consumed_vals.append(args[i + 1])
+                i += 2
+                continue
+        if arg.startswith("-") and len(arg) > 1:
+            flag = arg.partition("=")[0]
+            seen.add(flag)
+            if "=" in arg and flag in consumes:
+                consumed_vals.append(arg.partition("=")[2])
+            i += 1
+            continue
+        operands.append(arg)
+        i += 1
+    return operands, seen, consumed_vals
+
+
+def matches_sensitive_bash_read(command: str, pattern: re.Pattern[str]) -> bool:
+    """Detect sensitive-path reads via shell parsing (commands, args, redirections)."""
+    for words in command_views(command):
+        for i, word in enumerate(words[:-1]):
+            if re.fullmatch(r"\d*<(?!<)|<>", word) and (
+                pattern.search(words[i + 1]) or pattern.search(os.path.normpath(words[i + 1]))
+            ):
+                return True
+        exposed = _unwrap(words)
+        if not exposed:
+            continue
+        name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
+        args = _strip_redirections(exposed)
+        targets: list[str] = []
+
+        if name in {"source", "."}:
+            operands, _, _ = _collect_operands(args, set())
+            if operands:
+                targets.append(operands[0])
+        elif name in {"grep", "egrep", "fgrep"}:
+            consumes = {
+                "-e", "--regexp", "-f", "--file", "-m", "--max-count",
+                "-A", "--after-context", "-B", "--before-context", "-C", "--context",
+                "-d", "--directories", "-D", "--devices", "--include", "--exclude",
+                "--exclude-dir", "--label", "--binary-files", "--color",
+            }
+            operands, seen, _ = _collect_operands(args, consumes)
+            for i, arg in enumerate(args):
+                if arg in {"-f", "--file"} and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg.startswith("--file="):
+                    targets.append(arg.partition("=")[2])
+            has_explicit = bool(seen & {"-e", "--regexp", "-f", "--file"})
+            targets.extend(operands if has_explicit else operands[1:])
+        elif name in {"awk", "gawk", "nawk", "mawk"}:
+            consumes = {"-F", "-v", "-f", "-W", "-E"}
+            operands, seen, _ = _collect_operands(args, consumes)
+            for i, arg in enumerate(args):
+                if arg in {"-f", "-E", "--file"} and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg.startswith("--file="):
+                    targets.append(arg.partition("=")[2])
+            has_progfile = bool(seen & {"-f", "-E", "--file"})
+            targets.extend(operands if has_progfile else operands[1:])
+        elif name in {"sed", "gsed"}:
+            consumes = {"-e", "--expression", "-f", "--file"}
+            operands, seen, _ = _collect_operands(args, consumes)
+            for i, arg in enumerate(args):
+                if arg in {"-f", "--file"} and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg.startswith("--file="):
+                    targets.append(arg.partition("=")[2])
+            has_explicit = bool(seen & {"-e", "--expression", "-f", "--file"})
+            targets.extend(operands if has_explicit else operands[1:])
+        elif name == "dd":
+            for arg in args:
+                if arg.startswith("if="):
+                    targets.append(arg[3:])
+        elif name == "openssl":
+            path_flags = {"-in", "-inkey", "-cert", "-key", "-CAfile", "-CAkey", "-rand"}
+            for i, arg in enumerate(args):
+                if arg in path_flags and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg == "-passin" and i + 1 < len(args) and args[i + 1].startswith("file:"):
+                    targets.append(args[i + 1][5:])
+        elif name in {"cat", "less", "head", "tail", "base64", "xxd", "tar", "zip"}:
+            consumes = {
+                "head": {"-n", "-c", "--lines", "--bytes"},
+                "tail": {"-n", "-c", "--lines", "--bytes"},
+                "base64": {"-w", "--wrap"},
+                "xxd": {"-c", "-g", "-l", "-o", "-s"},
+                "tar": {"-C", "--directory"},
+            }.get(name, set())
+            operands, _, _ = _collect_operands(args, consumes)
+            targets.extend(operands)
+        elif name == "cp":
+            operands, seen, _ = _collect_operands(args, {"-t", "--target-directory"})
+            if seen & {"-t", "--target-directory"} or len(operands) <= 1:
+                targets.extend(operands)
+            else:
+                targets.extend(operands[:-1])
+
+        for target in targets:
+            if pattern.search(target) or pattern.search(os.path.normpath(target)):
+                return True
     return False
 
 
