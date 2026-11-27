@@ -249,3 +249,61 @@ def test_v16_item5_script_writes_with_credentials_denied(tool: str, tool_input: 
 def test_v16_item5_benign_script_writes_allowed(tool: str, tool_input: dict) -> None:
     blocked, _, _ = _eval(tool, tool_input)
     assert not blocked
+
+
+# --- Item 6: Private-key login scope enforcement ---
+
+@pytest.mark.parametrize("command", [
+    "ssh -i ~/.ssh/id_rsa dev@198.51.100.10",
+    "scp -i ~/.ssh/id_rsa file.txt dev@198.51.100.10:/tmp/",
+    "sftp -i ~/.ssh/id_rsa dev@198.51.100.10",
+    "sftp -o IdentityFile=~/.ssh/id_rsa dev@198.51.100.10",
+    "ssh-copy-id -i ~/.ssh/id_ed25519.pub dev@198.51.100.10",
+])
+def test_v16_item6_key_login_without_scope_denied(command: str) -> None:
+    blocked, _, rules = _eval("Bash", {"command": command}, scope=None)
+    assert blocked and "POL-17:KEY_LOGIN_SCOPE" in rules
+
+
+def test_v16_item6_key_login_unlisted_or_unresolved_host_denied(tmp_path: Path) -> None:
+    from receiptd.hooks.session_controls import load_scope
+
+    scope_file = tmp_path / "scope.json"
+    scope_file.write_text(json.dumps({"session_id": "s1", "allowed_hosts": ["build.example.invalid"]}))
+    scope = load_scope(scope_file, tmp_path)
+
+    for cmd in (
+        "ssh -i ~/.ssh/id_rsa dev@198.51.100.10",
+        "scp -i ~/.ssh/id_rsa file.txt dev@198.51.100.10:/tmp/",
+        "sftp -i ~/.ssh/id_rsa dev@198.51.100.10",
+        "ssh-copy-id -i ~/.ssh/id_ed25519.pub dev@198.51.100.10",
+        "ssh -i ~/.ssh/id_rsa",
+    ):
+        blocked, _, rules = _eval("Bash", {"command": cmd}, scope=scope)
+        assert blocked and "POL-17:KEY_LOGIN_SCOPE" in rules, f"should deny {cmd}"
+
+
+def test_v16_item6_key_login_allowlisted_host_and_pub_key_allowed(tmp_path: Path) -> None:
+    from receiptd.hooks.session_controls import load_scope
+
+    scope_file = tmp_path / "scope.json"
+    scope_file.write_text(json.dumps({"session_id": "s1", "allowed_hosts": ["build.example.invalid"]}))
+    scope = load_scope(scope_file, tmp_path)
+
+    for cmd in (
+        "ssh -i ~/.ssh/id_rsa dev@build.example.invalid",
+        "scp -i certs/deploy.key file.txt dev@build.example.invalid:/tmp/",
+        "sftp -i ~/.ssh/id_rsa dev@build.example.invalid",
+        "ssh-copy-id -i ~/.ssh/id_ed25519.pub dev@build.example.invalid",
+    ):
+        blocked, _, _ = _eval("Bash", {"command": cmd}, scope=scope)
+        assert not blocked, f"allowlisted host should allow {cmd}"
+
+    # .pub is not a private key, so allowed without scope
+    for cmd in (
+        "ssh -i ~/.ssh/id_ed25519.pub dev@198.51.100.10",
+        "scp -i certs/deploy.key.pub file.txt dev@198.51.100.10:/tmp/",
+        "sftp -i ~/.ssh/id_rsa.pub dev@198.51.100.10",
+    ):
+        blocked, _, _ = _eval("Bash", {"command": cmd}, scope=None)
+        assert not blocked, f".pub key should allow {cmd}"

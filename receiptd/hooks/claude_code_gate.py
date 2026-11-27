@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-from .session_controls import load_scope, scope_rules, supply_chain_match
+from .session_controls import SessionScope, key_login_denied, load_scope, scope_rules, supply_chain_match
 
 from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell, matches_script_write, matches_self_protection, matches_sensitive_bash_read
 
@@ -131,7 +131,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "search_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write"):
+        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "search_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write", "key_login"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -431,7 +431,7 @@ def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, patt
     return False
 
 
-def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = ()) -> tuple[bool, int, list[str]]:
+def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = (), scope: SessionScope | None = None) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
@@ -452,14 +452,14 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protect
 
     command = tool_input.get("command") if tool_name == "Bash" else None
     inspection_rules = [rule.id for rule in policy.rules
-                        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write")]
+                        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write", "key_login")]
     if isinstance(command, str) and len(command) > MAX_TEXT and inspection_rules:
         return True, 100, inspection_rules
     norm_command = normalize_shell_command(command) if isinstance(command, str) else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write"):
+        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write", "key_login"):
             try:
                 if rule.scope in ("persistence_action", "self_protection", "remote_shell"):
                     cwd = payload.get("cwd")
@@ -476,6 +476,8 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protect
                     matched = isinstance(command, str) and supply_chain_match(command)
                 elif rule.scope == "script_write":
                     matched = matches_script_write(command, tool_name, tool_input, rule.pattern)
+                elif rule.scope == "key_login":
+                    matched = isinstance(command, str) and key_login_denied(command, scope)
                 else:
                     matched = isinstance(command, str) and matches_sensitive_bash_read(command, rule.pattern)
             except (OSError, ValueError, RuntimeError, configparser.Error):
@@ -615,7 +617,7 @@ def _run() -> int:
                 policy_path_from_argv(sys.argv).resolve(),
                 Path(_CTX["ledger_path"]).resolve().parent,
                 *((scope_path,) if scope_path is not None else ()),
-            ))
+            ), scope=scope)
             decision = "deny" if blocked else "allow"
             reason = f"triggered rules: {', '.join(triggered)}" if blocked else "allowed"
 
