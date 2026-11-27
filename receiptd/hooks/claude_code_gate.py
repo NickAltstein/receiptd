@@ -386,6 +386,33 @@ def normalize_shell_command(command: str) -> str:
     return text
 
 
+_SENSITIVE_LIST_PROBES = (
+    ".env",
+    ".netrc",
+    ".ssh/id_rsa",
+    ".aws/credentials",
+    ".config/gcloud/credentials.db",
+    ".git/hooks/pre-commit",
+    "private/server.crt",
+    "server.key",
+    "server.pem",
+)
+
+
+def _glob_matches_sample(sample: str, glob_val: str) -> bool:
+    """Return True if glob_val can match the relative sample path."""
+    from pathlib import PurePosixPath
+    p = PurePosixPath(sample)
+    if glob_val.startswith("**/"):
+        tail = glob_val[3:]
+        if p.match(tail) or p.match(glob_val):
+            return True
+    if "**" in glob_val:
+        regex = "^" + re.escape(glob_val).replace(r"\*\*/", "(?:.+/)?").replace(r"\*\*", ".*").replace(r"\*", "[^/]*").replace(r"\?", "[^/]") + "$"
+        return bool(re.match(regex, sample))
+    return p.match(glob_val)
+
+
 def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, pattern: re.Pattern[str]) -> bool:
     """Check Glob and Grep path/glob/pattern against sensitive locations; deny unresolved paths."""
     if tool_name not in ("Glob", "Grep"):
@@ -428,6 +455,14 @@ def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, patt
                     return True
                 if pattern.search(resolved_prefix.as_posix()):
                     return True
+        if tool_name == "Glob":
+            home = Path(os.environ.get("HOME", "/home/user")).resolve()
+            is_home_scope = base_dir == home or home in base_dir.parents
+            for sample in _SENSITIVE_LIST_PROBES:
+                if _glob_matches_sample(sample, glob_val):
+                    root_entry = sample.split("/", 1)[0]
+                    if is_home_scope or (base_dir / root_entry).exists():
+                        return True
     return False
 
 

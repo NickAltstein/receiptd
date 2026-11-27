@@ -60,8 +60,14 @@ def test_v16_item1_bash_sensitive_keys_and_private_certs_denied(command: str) ->
     ("Read", {"file_path": "/etc/ssl/certs/ca-certificates.crt"}),
     ("Read", {"file_path": "certs/public/server.crt"}),
     ("Read", {"file_path": ".env.example"}),
+    ("Read", {"file_path": "en.keys.json"}),
+    ("Read", {"file_path": "foo.keymap"}),
+    ("Read", {"file_path": "app.keystore"}),
     ("Bash", {"command": "cat certs/public/server.crt"}),
     ("Bash", {"command": "cat .env.example"}),
+    ("Bash", {"command": "cat en.keys.json"}),
+    ("Bash", {"command": "cat foo.keymap"}),
+    ("Bash", {"command": "cat app.keystore"}),
 ])
 def test_v16_item1_benign_public_crt_and_env_example_allowed(tool: str, tool_input: dict) -> None:
     blocked, _, _ = _eval(tool, tool_input)
@@ -221,6 +227,23 @@ def test_v16_item4_glob_and_grep_benign_allowed(tmp_path: Path) -> None:
 
     blocked, _, _ = _eval("Glob", {"pattern": ".env.example"}, cwd=tmp_path)
     assert not blocked
+
+
+def test_v16_item4_glob_home_broad_or_hidden_denied(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh/id_ed25519").write_text("fixture", encoding="utf-8")
+    (home / ".aws").mkdir(parents=True)
+    (home / ".aws/credentials").write_text("fixture", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+
+    for path in ("~", str(home)):
+        for pattern in (".*/*", "**/*", "**/id_*"):
+            blocked, _, rules = _eval("Glob", {"pattern": pattern, "path": path}, cwd=ws)
+            assert blocked and "POL-18:SENSITIVE_SEARCH" in rules, f"Glob should deny {path=} {pattern=}"
 
 
 # --- Item 5: Script writes referencing credential files ---

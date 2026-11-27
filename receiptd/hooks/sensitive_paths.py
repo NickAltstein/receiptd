@@ -16,6 +16,6 @@ V1_4_SENSITIVE_PATH_CORE = (
 SENSITIVE_PATH_CORE = (
     V1_4_SENSITIVE_PATH_CORE
     + r"""|(?:^|(?<=[\s"'<=`]))/etc/ssl/private(?:/[^\s"'|;&]*)?"""
-    + r"""|[^\s"'|;&]+\.key"""
-    + r"""|(?:^|(?<=[/\s"'<=`]))private/[^\s"'|;&]+\.crt"""
+    + r"""|[^\s"'|;&]+\.key(?=[/\s"'|;&)]|$)"""
+    + r"""|(?:^|(?<=[/\s"'<=`]))private/[^\s"'|;&]+\.crt(?=[/\s"'|;&)]|$)"""
 )
