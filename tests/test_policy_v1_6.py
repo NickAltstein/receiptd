@@ -168,3 +168,56 @@ def test_v16_item3_shell_reads_denied(command: str) -> None:
 def test_v16_item3_quoted_text_and_benign_reads_allowed(command: str) -> None:
     blocked, _, _ = _eval("Bash", {"command": command})
     assert not blocked
+
+
+# --- Item 4: Glob and Grep in PreToolUse matcher + path rules ---
+
+def test_v16_item4_pretooluse_matcher_includes_glob_and_grep() -> None:
+    import re
+    from receiptd.cli import PRETOOLUSE_MATCHER
+
+    for tool in ("Bash", "Write", "Edit", "MultiEdit", "Read", "Glob", "Grep", "mcp__foo"):
+        assert re.fullmatch(PRETOOLUSE_MATCHER, tool), f"matcher missed {tool}"
+
+
+def test_v16_item4_glob_and_grep_sensitive_or_unresolved_denied(tmp_path: Path) -> None:
+    (tmp_path / ".ssh").mkdir()
+    (tmp_path / ".aws").mkdir()
+    (tmp_path / ".git/hooks").mkdir(parents=True)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "private").mkdir()
+
+    # Grep into sensitive path
+    for tool_input in (
+        {"pattern": "KEY", "path": ".ssh"},
+        {"pattern": "secret", "path": ".aws"},
+        {"pattern": "x", "path": "src", "glob": "*.key"},
+        {"pattern": "x", "path": "src", "glob": ".env*"},
+        {"pattern": "x", "path": "nonexistent_dir"},
+    ):
+        blocked, _, rules = _eval("Grep", tool_input, cwd=tmp_path)
+        assert blocked and "POL-18:SENSITIVE_SEARCH" in rules, f"Grep should deny {tool_input}"
+
+    # Glob listing sensitive locations or unresolved paths
+    for tool_input in (
+        {"pattern": "*", "path": ".ssh"},
+        {"pattern": "*", "path": ".git/hooks"},
+        {"pattern": "**/*.key"},
+        {"pattern": "private/*.crt"},
+        {"pattern": "**/.env*"},
+        {"pattern": "*", "path": "missing_dir"},
+    ):
+        blocked, _, rules = _eval("Glob", tool_input, cwd=tmp_path)
+        assert blocked and "POL-18:SENSITIVE_SEARCH" in rules, f"Glob should deny {tool_input}"
+
+
+def test_v16_item4_glob_and_grep_benign_allowed(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    blocked, _, _ = _eval("Glob", {"pattern": "*.py", "path": "src"}, cwd=tmp_path)
+    assert not blocked
+
+    blocked, _, _ = _eval("Grep", {"pattern": "API_KEY", "path": "src", "glob": "*.py"}, cwd=tmp_path)
+    assert not blocked
+
+    blocked, _, _ = _eval("Glob", {"pattern": ".env.example"}, cwd=tmp_path)
+    assert not blocked

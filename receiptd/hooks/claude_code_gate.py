@@ -131,7 +131,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read"):
+        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "search_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -386,6 +386,51 @@ def normalize_shell_command(command: str) -> str:
     return text
 
 
+def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, pattern: re.Pattern[str]) -> bool:
+    """Check Glob and Grep path/glob/pattern against sensitive locations; deny unresolved paths."""
+    if tool_name not in ("Glob", "Grep"):
+        return False
+    raw_path = tool_input.get("path")
+    if raw_path is not None:
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return True
+        expanded = _normalize_path(raw_path)
+        try:
+            base_dir = (workspace / expanded).resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            return True
+        for candidate in (expanded, base_dir.as_posix()):
+            if pattern.search(candidate):
+                return True
+    else:
+        try:
+            base_dir = workspace.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            return True
+
+    glob_key = "pattern" if tool_name == "Glob" else "glob"
+    glob_val = tool_input.get(glob_key)
+    if glob_val is not None:
+        if not isinstance(glob_val, str) or not glob_val.strip():
+            return True
+        expanded_glob = _normalize_path(glob_val)
+        if pattern.search(glob_val) or pattern.search(expanded_glob):
+            return True
+        # Resolve non-wildcard prefix if it traverses, is absolute, or hits a symlink.
+        prefix = re.split(r"[*?\[\{]", glob_val, maxsplit=1)[0].rstrip("/")
+        if prefix:
+            expanded_prefix = _normalize_path(prefix)
+            probe = base_dir / expanded_prefix
+            if probe.is_symlink() or ".." in Path(prefix).parts or prefix.startswith(("/", "~", "$HOME", "${HOME}")):
+                try:
+                    resolved_prefix = probe.resolve(strict=True)
+                except (OSError, RuntimeError, ValueError):
+                    return True
+                if pattern.search(resolved_prefix.as_posix()):
+                    return True
+    return False
+
+
 def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = ()) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
@@ -450,6 +495,10 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protect
                 and isinstance(path, str)
                 and bool(rule.pattern.search(_normalize_path(path)))
             )
+        elif rule.scope == "search_path":
+            cwd = payload.get("cwd")
+            workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
+            matched = _matches_search_path(tool_name, tool_input, workspace, rule.pattern)
         elif rule.scope == "shell_command":
             matched = isinstance(command, str) and (
                 bool(rule.pattern.search(command))
