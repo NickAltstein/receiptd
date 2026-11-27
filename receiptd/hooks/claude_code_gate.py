@@ -435,8 +435,12 @@ def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, patt
         except (OSError, RuntimeError, ValueError):
             return True
 
+    home = Path(os.environ.get("HOME", "/home/user")).resolve()
+    is_home_scope = base_dir == home or base_dir in home.parents
+
     glob_key = "pattern" if tool_name == "Glob" else "glob"
     glob_val = tool_input.get(glob_key)
+    resolved_prefix: Path | None = None
     if glob_val is not None:
         if not isinstance(glob_val, str) or not glob_val.strip():
             return True
@@ -455,14 +459,24 @@ def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, patt
                     return True
                 if pattern.search(resolved_prefix.as_posix()):
                     return True
-        if tool_name == "Glob":
-            home = Path(os.environ.get("HOME", "/home/user")).resolve()
-            is_home_scope = base_dir == home or home in base_dir.parents
-            for sample in _SENSITIVE_LIST_PROBES:
-                if _glob_matches_sample(sample, glob_val):
-                    root_entry = sample.split("/", 1)[0]
-                    if is_home_scope or (base_dir / root_entry).exists():
-                        return True
+            elif is_home_scope:
+                try:
+                    resolved_prefix = probe.resolve(strict=True)
+                except (OSError, RuntimeError, ValueError):
+                    return True
+                if pattern.search(resolved_prefix.as_posix()):
+                    return True
+
+    if tool_name == "Grep" and is_home_scope:
+        if resolved_prefix is None or resolved_prefix == home or resolved_prefix in home.parents:
+            return True
+
+    if tool_name == "Glob" and glob_val is not None:
+        for sample in _SENSITIVE_LIST_PROBES:
+            if _glob_matches_sample(sample, glob_val):
+                root_entry = sample.split("/", 1)[0]
+                if is_home_scope or (base_dir / root_entry).exists():
+                    return True
     return False
 
 

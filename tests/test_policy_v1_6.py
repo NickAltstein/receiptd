@@ -246,6 +246,27 @@ def test_v16_item4_glob_home_broad_or_hidden_denied(monkeypatch, tmp_path: Path)
             assert blocked and "POL-18:SENSITIVE_SEARCH" in rules, f"Glob should deny {path=} {pattern=}"
 
 
+def test_v16_item4_grep_home_and_ancestors_denied(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    app = home / "projects" / "app"
+    app.mkdir(parents=True)
+    ws = home / "projects" / "ws"
+    ws.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+
+    for path in ("~", str(home), "/"):
+        for extra in ({}, {"glob": "**/*"}):
+            tool_input = {"pattern": "PRIVATE", "path": path, **extra}
+            blocked, _, rules = _eval("Grep", tool_input, cwd=ws)
+            assert blocked and "POL-18:SENSITIVE_SEARCH" in rules, f"Grep should deny {tool_input}"
+
+    blocked, _, _ = _eval("Grep", {"pattern": "PRIVATE", "path": "~/projects/app", "glob": "*.py"}, cwd=ws)
+    assert not blocked
+
+    blocked, _, _ = _eval("Grep", {"pattern": "PRIVATE"}, cwd=ws)
+    assert not blocked
+
+
 # --- Item 5: Script writes referencing credential files ---
 
 @pytest.mark.parametrize("tool,tool_input", [
