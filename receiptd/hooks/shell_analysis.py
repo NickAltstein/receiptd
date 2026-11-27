@@ -506,6 +506,38 @@ def matches_sensitive_bash_read(command: str, pattern: re.Pattern[str]) -> bool:
     return False
 
 
+def matches_script_write(command: str | None, tool: str, args: dict, pattern: re.Pattern[str]) -> bool:
+    """Deny Write, heredoc, tee, or cat > whose written contents reference credential files."""
+    if tool == "Write":
+        content = args.get("content")
+        return isinstance(content, str) and bool(pattern.search(content))
+    if tool != "Bash" or not isinstance(command, str):
+        return False
+    try:
+        tokens = _tokens(command)
+    except ValueError:
+        return True
+    has_heredoc = "<<" in tokens
+    has_tee = False
+    has_cat_redirect = False
+    has_write_redirect = False
+    for words in command_views(command):
+        exposed = _unwrap(words)
+        if not exposed:
+            continue
+        name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
+        if name == "tee":
+            has_tee = True
+        has_redir = any(re.fullmatch(r"(?:\d*>{1,2}&?|&>>?)", w) for w in words)
+        if has_redir:
+            has_write_redirect = True
+            if name == "cat":
+                has_cat_redirect = True
+    if not (has_heredoc or has_tee or has_cat_redirect or has_write_redirect):
+        return False
+    return bool(pattern.search(command))
+
+
 def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path, path_check=None) -> bool:
     hooks_root = configured_hooks_root(cwd) if path_check is None else None
     check = path_check or persistence_path

@@ -221,3 +221,31 @@ def test_v16_item4_glob_and_grep_benign_allowed(tmp_path: Path) -> None:
 
     blocked, _, _ = _eval("Glob", {"pattern": ".env.example"}, cwd=tmp_path)
     assert not blocked
+
+
+# --- Item 5: Script writes referencing credential files ---
+
+@pytest.mark.parametrize("tool,tool_input", [
+    ("Write", {"file_path": "setup.sh", "content": "source ~/.netrc\n"}),
+    ("Write", {"file_path": "run.sh", "content": "set -a; source .env\n"}),
+    ("Write", {"file_path": "dump.sh", "content": "ls -la ~/.ssh/\n"}),
+    ("Write", {"file_path": "creds.py", "content": "open('.aws/credentials')\n"}),
+    ("Bash", {"command": "cat > setup.sh <<'EOF'\nsource ~/.netrc\nEOF"}),
+    ("Bash", {"command": "cat <<EOF > run.sh\nsource .env\nEOF"}),
+    ("Bash", {"command": "echo 'cat ~/.aws/credentials' | tee dump.sh"}),
+    ("Bash", {"command": "cat > copy.sh <<'X'\ncp ~/.ssh/id_rsa /tmp/k\nX"}),
+])
+def test_v16_item5_script_writes_with_credentials_denied(tool: str, tool_input: dict) -> None:
+    blocked, _, rules = _eval(tool, tool_input)
+    assert blocked and "POL-16:CREDENTIAL_SCRIPT_WRITE" in rules
+
+
+@pytest.mark.parametrize("tool,tool_input", [
+    ("Write", {"file_path": "setup.sh", "content": "echo hello\n"}),
+    ("Write", {"file_path": "setup.sh", "content": "cp .env.example config.example\n"}),
+    ("Bash", {"command": "cat > setup.sh <<'EOF'\necho hello\nEOF"}),
+    ("Bash", {"command": "echo 'see .env.example' | tee notes.txt"}),
+])
+def test_v16_item5_benign_script_writes_allowed(tool: str, tool_input: dict) -> None:
+    blocked, _, _ = _eval(tool, tool_input)
+    assert not blocked
