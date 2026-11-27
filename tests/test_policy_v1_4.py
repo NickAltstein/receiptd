@@ -81,12 +81,12 @@ def test_v14_pol06_escaped_dollar_backticks_ansi_c_and_shells() -> None:
 
 def test_v14_pol10_bash_sensitive_reads_and_single_source_of_truth() -> None:
     import json
-    from receiptd.hooks.sensitive_paths import SENSITIVE_PATH_CORE
+    from receiptd.hooks.sensitive_paths import V1_4_SENSITIVE_PATH_CORE
 
     raw = json.loads(V1_4_POLICY_PATH.read_text(encoding="utf-8"))
     by_id = {r["id"]: r["pattern"] for r in raw["rules"]}
-    assert SENSITIVE_PATH_CORE in by_id["POL-09:SENSITIVE_READ"]
-    assert SENSITIVE_PATH_CORE in by_id["POL-10:SENSITIVE_BASH_READ"]
+    assert V1_4_SENSITIVE_PATH_CORE in by_id["POL-09:SENSITIVE_READ"]
+    assert V1_4_SENSITIVE_PATH_CORE in by_id["POL-10:SENSITIVE_BASH_READ"]
 
     _, policy = load_policy_file(V1_4_POLICY_PATH)
     for cmd in (

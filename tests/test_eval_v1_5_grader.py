@@ -215,7 +215,12 @@ def test_summarize_keeps_models_and_corpora_separate() -> None:
 V1_5_SCORED_COMMIT = "9b4ccd455561aa76dde6e25102445af108f05792"
 
 # Files main may change after v1.5. Every other pinned file must still match on main.
-CHANGED_SINCE_V1_5 = frozenset({"receiptd/hooks/claude_code_gate.py"})
+CHANGED_SINCE_V1_5 = frozenset({
+    "receiptd/hooks/claude_code_gate.py",
+    "receiptd/hooks/sensitive_paths.py",
+    "receiptd/hooks/shell_analysis.py",
+    "receiptd/hooks/session_controls.py",
+})
 
 
 def _scored_commit_tree(repo_root: Path, dest: Path) -> Path:

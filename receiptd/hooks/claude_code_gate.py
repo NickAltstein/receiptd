@@ -21,9 +21,9 @@ from pathlib import Path
 
 import yaml
 
-from .session_controls import load_scope, scope_rules, supply_chain_match
+from .session_controls import SessionScope, key_login_denied, load_scope, scope_rules, supply_chain_match
 
-from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell, matches_self_protection
+from .shell_analysis import MAX_TEXT, matches_persistence, matches_remote_shell, matches_script_write, matches_self_protection, matches_sensitive_bash_read
 
 from ..crypto import (
     SigningKey,
@@ -131,7 +131,7 @@ def parse_policy(data: bytes) -> HookPolicy:
         except re.error as exc:
             raise ValueError(f"rule {index} pattern is not a valid regex") from exc
         scope = raw.get("scope", "payload")
-        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain"):
+        if scope not in ("payload", "workflow_edit", "write_path", "read_path", "search_path", "shell_command", "persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write", "key_login"):
             raise ValueError(f"rule {index} has an unknown scope")
         rules.append(HookRule(id=rule_id, weight=weight, pattern=compiled, scope=scope))
     return HookPolicy(base_score=base_score, deny_at=deny_at, rules=tuple(rules))
@@ -386,7 +386,101 @@ def normalize_shell_command(command: str) -> str:
     return text
 
 
-def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = ()) -> tuple[bool, int, list[str]]:
+_SENSITIVE_LIST_PROBES = (
+    ".env",
+    ".netrc",
+    ".ssh/id_rsa",
+    ".aws/credentials",
+    ".config/gcloud/credentials.db",
+    ".git/hooks/pre-commit",
+    "private/server.crt",
+    "server.key",
+    "server.pem",
+)
+
+
+def _glob_matches_sample(sample: str, glob_val: str) -> bool:
+    """Return True if glob_val can match the relative sample path."""
+    from pathlib import PurePosixPath
+    p = PurePosixPath(sample)
+    if glob_val.startswith("**/"):
+        tail = glob_val[3:]
+        if p.match(tail) or p.match(glob_val):
+            return True
+    if "**" in glob_val:
+        regex = "^" + re.escape(glob_val).replace(r"\*\*/", "(?:.+/)?").replace(r"\*\*", ".*").replace(r"\*", "[^/]*").replace(r"\?", "[^/]") + "$"
+        return bool(re.match(regex, sample))
+    return p.match(glob_val)
+
+
+def _matches_search_path(tool_name: str, tool_input: dict, workspace: Path, pattern: re.Pattern[str]) -> bool:
+    """Check Glob and Grep path/glob/pattern against sensitive locations; deny unresolved paths."""
+    if tool_name not in ("Glob", "Grep"):
+        return False
+    raw_path = tool_input.get("path")
+    if raw_path is not None:
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return True
+        expanded = _normalize_path(raw_path)
+        try:
+            base_dir = (workspace / expanded).resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            return True
+        for candidate in (expanded, base_dir.as_posix()):
+            if pattern.search(candidate):
+                return True
+    else:
+        try:
+            base_dir = workspace.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            return True
+
+    home = Path(os.environ.get("HOME", "/home/user")).resolve()
+    is_home_scope = base_dir == home or base_dir in home.parents
+
+    glob_key = "pattern" if tool_name == "Glob" else "glob"
+    glob_val = tool_input.get(glob_key)
+    resolved_prefix: Path | None = None
+    if glob_val is not None:
+        if not isinstance(glob_val, str) or not glob_val.strip():
+            return True
+        expanded_glob = _normalize_path(glob_val)
+        if pattern.search(glob_val) or pattern.search(expanded_glob):
+            return True
+        # Resolve non-wildcard prefix if it traverses, is absolute, or hits a symlink.
+        prefix = re.split(r"[*?\[\{]", glob_val, maxsplit=1)[0].rstrip("/")
+        if prefix:
+            expanded_prefix = _normalize_path(prefix)
+            probe = base_dir / expanded_prefix
+            if probe.is_symlink() or ".." in Path(prefix).parts or prefix.startswith(("/", "~", "$HOME", "${HOME}")):
+                try:
+                    resolved_prefix = probe.resolve(strict=True)
+                except (OSError, RuntimeError, ValueError):
+                    return True
+                if pattern.search(resolved_prefix.as_posix()):
+                    return True
+            elif is_home_scope:
+                try:
+                    resolved_prefix = probe.resolve(strict=True)
+                except (OSError, RuntimeError, ValueError):
+                    return True
+                if pattern.search(resolved_prefix.as_posix()):
+                    return True
+
+    if tool_name == "Grep" and is_home_scope:
+        if resolved_prefix is None or resolved_prefix == home or resolved_prefix in home.parents:
+            return True
+
+    if tool_name == "Glob" and glob_val is not None:
+        for sample in _SENSITIVE_LIST_PROBES:
+            if _glob_matches_sample(sample, glob_val):
+                root_entry = sample.split("/", 1)[0]
+                if is_home_scope or (base_dir / root_entry).exists():
+                    return True
+    return False
+
+
+def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protected_paths: tuple[Path, ...] = (), scope: SessionScope | None = None) -> tuple[bool, int, list[str]]:
     """Score one tool call with the given policy. The default is the packaged file."""
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
@@ -407,28 +501,34 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protect
 
     command = tool_input.get("command") if tool_name == "Bash" else None
     inspection_rules = [rule.id for rule in policy.rules
-                        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain")]
+                        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write", "key_login")]
     if isinstance(command, str) and len(command) > MAX_TEXT and inspection_rules:
         return True, 100, inspection_rules
     norm_command = normalize_shell_command(command) if isinstance(command, str) else None
     score = policy.base_score
     triggered = []
     for rule in policy.rules:
-        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain"):
+        if rule.scope in ("persistence_action", "remote_shell", "self_protection", "supply_chain", "sensitive_bash_read", "script_write", "key_login"):
             try:
-                if rule.scope in ("persistence_action", "self_protection"):
+                if rule.scope in ("persistence_action", "self_protection", "remote_shell"):
                     cwd = payload.get("cwd")
                     workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
                     if rule.scope == "self_protection":
                         paths = protected_paths + (default_policy_path(), get_key_dir(),
                             workspace / ".receiptd", workspace / ".birkin")
                         matched = matches_self_protection(command, tool_name, tool_input, workspace, paths)
-                    else:
+                    elif rule.scope == "persistence_action":
                         matched = matches_persistence(command, tool_name, tool_input, workspace)
+                    else:
+                        matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern, cwd=workspace)
                 elif rule.scope == "supply_chain":
                     matched = isinstance(command, str) and supply_chain_match(command)
+                elif rule.scope == "script_write":
+                    matched = matches_script_write(command, tool_name, tool_input, rule.pattern)
+                elif rule.scope == "key_login":
+                    matched = isinstance(command, str) and key_login_denied(command, scope)
                 else:
-                    matched = isinstance(command, str) and matches_remote_shell(command, rule.pattern)
+                    matched = isinstance(command, str) and matches_sensitive_bash_read(command, rule.pattern)
             except (OSError, ValueError, RuntimeError, configparser.Error):
                 # An incomplete static inspection must not allow a call.
                 matched = True
@@ -448,6 +548,10 @@ def evaluate_payload(payload: dict, policy: HookPolicy | None = None, *, protect
                 and isinstance(path, str)
                 and bool(rule.pattern.search(_normalize_path(path)))
             )
+        elif rule.scope == "search_path":
+            cwd = payload.get("cwd")
+            workspace = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
+            matched = _matches_search_path(tool_name, tool_input, workspace, rule.pattern)
         elif rule.scope == "shell_command":
             matched = isinstance(command, str) and (
                 bool(rule.pattern.search(command))
@@ -562,7 +666,7 @@ def _run() -> int:
                 policy_path_from_argv(sys.argv).resolve(),
                 Path(_CTX["ledger_path"]).resolve().parent,
                 *((scope_path,) if scope_path is not None else ()),
-            ))
+            ), scope=scope)
             decision = "deny" if blocked else "allow"
             reason = f"triggered rules: {', '.join(triggered)}" if blocked else "allowed"
 

@@ -166,7 +166,7 @@ def command_views(command: str) -> list[list[str]]:
                 result.append(exposed)
             if not exposed:
                 continue
-            name = Path(exposed[0]).name
+            name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
             if name in SHELLS:
                 for i, arg in enumerate(exposed[1:], 1):
                     if arg.startswith("-") and "c" in arg and i + 1 < len(exposed):
@@ -291,12 +291,58 @@ def persistence_path(path: str, cwd: Path, hooks_root: Path | None) -> bool:
                                       or absolute.resolve() == hooks_root or hooks_root in absolute.resolve().parents)
 
 
-def matches_remote_shell(command: str, pattern: re.Pattern[str]) -> bool:
+_PY_CMD_RE = re.compile(r"^python(?:[23](?:\.\d+)?)?$")
+_PY_SOCKET_RE = re.compile(r"\bsocket\b", re.I)
+_PY_CONNECT_RE = re.compile(r"\.(?:connect|create_connection)\s*\(", re.I)
+_PY_EXEC_RE = re.compile(r"\b(?:subprocess|os\s*\.\s*system|pty|dup2)\b", re.I)
+_PY_PTY_RE = re.compile(r"\b(?:pty|dup2)\b", re.I)
+
+
+def _is_python_remote_shell(code: str) -> bool:
+    if not _PY_SOCKET_RE.search(code):
+        return False
+    if _PY_PTY_RE.search(code):
+        return True
+    has_exec = bool(_PY_EXEC_RE.search(code) or re.search(r"\bfrom\s+os\s+import\b[^\n]*\bsystem\b", code))
+    return bool(_PY_CONNECT_RE.search(code) and has_exec)
+
+
+def _python_script_arg(exposed: list[str]) -> tuple[str | None, str | None]:
+    """Return (script_path, inline_code) for a python* invocation."""
+    args = exposed[1:]
+    consumes = {"-W", "-X", "--check-hash-based-pycs"}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "-c":
+            return None, args[i + 1] if i + 1 < len(args) else ""
+        if arg.startswith("-c") and len(arg) > 2:
+            return None, arg[2:]
+        if arg == "-m" or arg.startswith("-m"):
+            return None, None
+        if arg == "-":
+            return None, None
+        if arg in consumes:
+            i += 2
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        return arg, None
+    return None, None
+
+
+def matches_remote_shell(command: str, pattern: re.Pattern[str], cwd: Path | None = None) -> bool:
+    active_cwd = cwd if cwd is not None else Path.cwd()
+    home = os.environ.get("HOME", "/home/user")
     for words in command_views(command):
         exposed = _unwrap(words)
         if not exposed:
             continue
-        name = Path(exposed[0]).name
+        name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
+        if name == "cd" and len(exposed) == 2:
+            active_cwd = (active_cwd / _expand(exposed[1], {"HOME": home})).resolve(strict=True)
+            continue
         # Includes the v1.4 executable-path miss, and redirects of every fd.
         if re.match(r"^/dev/(?:tcp|udp)/", exposed[0]):
             return True
@@ -307,10 +353,189 @@ def matches_remote_shell(command: str, pattern: re.Pattern[str]) -> bool:
             return True
         if name == "socat" and any(re.match(r"(?:exec|system):", w, re.I) for w in exposed[1:]):
             return True
+        if _PY_CMD_RE.fullmatch(name):
+            script_arg, inline_code = _python_script_arg(exposed)
+            if inline_code is not None and _is_python_remote_shell(inline_code):
+                return True
+            if script_arg is not None:
+                expanded = _expand(script_arg, {"HOME": home})
+                target = (active_cwd / expanded).resolve(strict=True)
+                if not target.is_file():
+                    raise ValueError("python script target is not a file")
+                data = target.read_bytes()
+                if len(data) > MAX_TEXT:
+                    raise ValueError("python script exceeds static inspection limit")
+                text = data.decode("utf-8")
+                if _is_python_remote_shell(text) or pattern.search(text):
+                    return True
         # Preserve other pre-existing remote-shell indicators.
         if pattern.search(" ".join(words)):
             return True
     return False
+
+
+def _strip_redirections(words: list[str]) -> list[str]:
+    """Return command words with redirection operators and their targets removed."""
+    plain: list[str] = []
+    i = 1
+    while i < len(words):
+        if re.fullmatch(r"(?:\d*[<>]+&?|&>>?)", words[i]):
+            if plain and plain[-1].isdigit():
+                plain.pop()
+            i += 2
+            continue
+        plain.append(words[i])
+        i += 1
+    return plain
+
+
+def _collect_operands(args: list[str], consumes: set[str]) -> tuple[list[str], set[str], list[str]]:
+    """Parse flags and positional operands; return (operands, seen_flags, consumed_values)."""
+    operands: list[str] = []
+    seen: set[str] = set()
+    consumed_vals: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            operands.extend(args[i + 1:])
+            break
+        if arg in consumes:
+            seen.add(arg)
+            if i + 1 < len(args):
+                consumed_vals.append(args[i + 1])
+                i += 2
+                continue
+        if arg.startswith("-") and len(arg) > 1:
+            flag = arg.partition("=")[0]
+            seen.add(flag)
+            if "=" in arg and flag in consumes:
+                consumed_vals.append(arg.partition("=")[2])
+            i += 1
+            continue
+        operands.append(arg)
+        i += 1
+    return operands, seen, consumed_vals
+
+
+def matches_sensitive_bash_read(command: str, pattern: re.Pattern[str]) -> bool:
+    """Detect sensitive-path reads via shell parsing (commands, args, redirections)."""
+    for words in command_views(command):
+        for i, word in enumerate(words[:-1]):
+            if re.fullmatch(r"\d*<(?!<)|<>", word) and (
+                pattern.search(words[i + 1]) or pattern.search(os.path.normpath(words[i + 1]))
+            ):
+                return True
+        exposed = _unwrap(words)
+        if not exposed:
+            continue
+        name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
+        args = _strip_redirections(exposed)
+        targets: list[str] = []
+
+        if name in {"source", "."}:
+            operands, _, _ = _collect_operands(args, set())
+            if operands:
+                targets.append(operands[0])
+        elif name in {"grep", "egrep", "fgrep"}:
+            consumes = {
+                "-e", "--regexp", "-f", "--file", "-m", "--max-count",
+                "-A", "--after-context", "-B", "--before-context", "-C", "--context",
+                "-d", "--directories", "-D", "--devices", "--include", "--exclude",
+                "--exclude-dir", "--label", "--binary-files", "--color",
+            }
+            operands, seen, _ = _collect_operands(args, consumes)
+            for i, arg in enumerate(args):
+                if arg in {"-f", "--file"} and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg.startswith("--file="):
+                    targets.append(arg.partition("=")[2])
+            has_explicit = bool(seen & {"-e", "--regexp", "-f", "--file"})
+            targets.extend(operands if has_explicit else operands[1:])
+        elif name in {"awk", "gawk", "nawk", "mawk"}:
+            consumes = {"-F", "-v", "-f", "-W", "-E"}
+            operands, seen, _ = _collect_operands(args, consumes)
+            for i, arg in enumerate(args):
+                if arg in {"-f", "-E", "--file"} and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg.startswith("--file="):
+                    targets.append(arg.partition("=")[2])
+            has_progfile = bool(seen & {"-f", "-E", "--file"})
+            targets.extend(operands if has_progfile else operands[1:])
+        elif name in {"sed", "gsed"}:
+            consumes = {"-e", "--expression", "-f", "--file"}
+            operands, seen, _ = _collect_operands(args, consumes)
+            for i, arg in enumerate(args):
+                if arg in {"-f", "--file"} and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg.startswith("--file="):
+                    targets.append(arg.partition("=")[2])
+            has_explicit = bool(seen & {"-e", "--expression", "-f", "--file"})
+            targets.extend(operands if has_explicit else operands[1:])
+        elif name == "dd":
+            for arg in args:
+                if arg.startswith("if="):
+                    targets.append(arg[3:])
+        elif name == "openssl":
+            path_flags = {"-in", "-inkey", "-cert", "-key", "-CAfile", "-CAkey", "-rand"}
+            for i, arg in enumerate(args):
+                if arg in path_flags and i + 1 < len(args):
+                    targets.append(args[i + 1])
+                elif arg == "-passin" and i + 1 < len(args) and args[i + 1].startswith("file:"):
+                    targets.append(args[i + 1][5:])
+        elif name in {"cat", "less", "head", "tail", "base64", "xxd", "tar", "zip"}:
+            consumes = {
+                "head": {"-n", "-c", "--lines", "--bytes"},
+                "tail": {"-n", "-c", "--lines", "--bytes"},
+                "base64": {"-w", "--wrap"},
+                "xxd": {"-c", "-g", "-l", "-o", "-s"},
+                "tar": {"-C", "--directory"},
+            }.get(name, set())
+            operands, _, _ = _collect_operands(args, consumes)
+            targets.extend(operands)
+        elif name == "cp":
+            operands, seen, _ = _collect_operands(args, {"-t", "--target-directory"})
+            if seen & {"-t", "--target-directory"} or len(operands) <= 1:
+                targets.extend(operands)
+            else:
+                targets.extend(operands[:-1])
+
+        for target in targets:
+            if pattern.search(target) or pattern.search(os.path.normpath(target)):
+                return True
+    return False
+
+
+def matches_script_write(command: str | None, tool: str, args: dict, pattern: re.Pattern[str]) -> bool:
+    """Deny Write, heredoc, tee, or cat > whose written contents reference credential files."""
+    if tool == "Write":
+        content = args.get("content")
+        return isinstance(content, str) and bool(pattern.search(content))
+    if tool != "Bash" or not isinstance(command, str):
+        return False
+    try:
+        tokens = _tokens(command)
+    except ValueError:
+        return True
+    has_heredoc = "<<" in tokens
+    has_tee = False
+    has_cat_redirect = False
+    has_write_redirect = False
+    for words in command_views(command):
+        exposed = _unwrap(words)
+        if not exposed:
+            continue
+        name = exposed[0] if exposed[0] == "." else Path(exposed[0]).name
+        if name == "tee":
+            has_tee = True
+        has_redir = any(re.fullmatch(r"(?:\d*>{1,2}&?|&>>?)", w) for w in words)
+        if has_redir:
+            has_write_redirect = True
+            if name == "cat":
+                has_cat_redirect = True
+    if not (has_heredoc or has_tee or has_cat_redirect or has_write_redirect):
+        return False
+    return bool(pattern.search(command))
 
 
 def matches_persistence(command: str | None, tool: str, args: dict, cwd: Path, path_check=None) -> bool:

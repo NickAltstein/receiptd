@@ -9,9 +9,13 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-from .shell_analysis import command_views, _expand
+from .shell_analysis import command_views, _expand, _unwrap
 
-NETWORK = {'curl', 'wget', 'fetch', 'nc', 'ncat', 'netcat', 'ssh', 'scp', 'rsync'}
+NETWORK = {'curl', 'wget', 'fetch', 'nc', 'ncat', 'netcat', 'ssh', 'scp', 'sftp', 'ssh-copy-id', 'rsync'}
+_SSH_CONSUMES = {
+    '-b', '-B', '-c', '-D', '-E', '-e', '-F', '-i', '-I', '-J', '-l',
+    '-L', '-m', '-o', '-O', '-p', '-P', '-Q', '-R', '-s', '-S', '-w', '-W',
+}
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,96 @@ def supply_chain_match(command: str) -> bool:
     return False
 
 
+def _ssh_positional_operands(args: list[str]) -> list[str]:
+    operands: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == '--':
+            operands.extend(args[i + 1:])
+            break
+        if arg in _SSH_CONSUMES:
+            i += 2
+            continue
+        if arg.startswith('-'):
+            i += 1
+            continue
+        operands.append(arg)
+        i += 1
+    return operands
+
+
+def _ssh_destination_hosts(words: list[str]) -> set[str]:
+    name = Path(words[0]).name
+    args = words[1:]
+    hosts: set[str] = set()
+    for word in args:
+        if '://' in word:
+            host = urlsplit(word).hostname
+            if host:
+                hosts.add(host.lower())
+        elif name in {'scp', 'sftp'} and re.fullmatch(r'(?:[^@\s]+@)?[A-Za-z0-9.-]+:.*', word):
+            hosts.add(word.split('@')[-1].split(':')[0].lower())
+    if hosts:
+        return hosts
+    if name in {'ssh', 'sftp', 'ssh-copy-id'}:
+        operands = _ssh_positional_operands(args)
+        if operands:
+            candidate = operands[0].split('@')[-1].split(':')[0].lower()
+            if candidate and not candidate.startswith(('/', '.')):
+                hosts.add(candidate)
+    return hosts
+
+
+def _identity_files(args: list[str]) -> list[str]:
+    files: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == '-i' and i + 1 < len(args):
+            files.append(args[i + 1])
+            i += 2
+            continue
+        if arg.startswith('-i') and len(arg) > 2:
+            files.append(arg[2:])
+            i += 1
+            continue
+        if arg == '-o' and i + 1 < len(args):
+            opt = args[i + 1]
+            if opt.lower().startswith('identityfile='):
+                files.append(opt.partition('=')[2])
+            i += 2
+            continue
+        if arg.lower().startswith('-oidentityfile='):
+            files.append(arg.partition('=')[2])
+            i += 1
+            continue
+        i += 1
+    return files
+
+
+def key_login_denied(command: str, scope: SessionScope | None) -> bool:
+    """Deny ssh -i / scp -i / sftp with private key / ssh-copy-id unless host is allowlisted."""
+    for words in command_views(command):
+        exposed = _unwrap(words)
+        if not exposed:
+            continue
+        name = Path(exposed[0]).name
+        if name not in {'ssh', 'scp', 'sftp', 'ssh-copy-id'}:
+            continue
+        if name != 'ssh-copy-id':
+            id_files = _identity_files(exposed[1:])
+            private_keys = [p for p in id_files if not p.endswith('.pub')]
+            if not private_keys:
+                continue
+        if scope is None or scope.hosts is None:
+            return True
+        hosts = _ssh_destination_hosts(exposed)
+        if not hosts or not hosts <= scope.hosts:
+            return True
+    return False
+
+
 def scope_rules(scope: SessionScope, payload: dict, ledger: Path) -> list[str]:
     rules = []
     if str(payload.get('session_id') or os.environ.get('RECEIPTD_SESSION_ID', 'default')) != scope.session_id:
@@ -103,18 +197,22 @@ def scope_rules(scope: SessionScope, payload: dict, ledger: Path) -> list[str]:
         for words in views:
             if not words or Path(words[0]).name not in NETWORK:
                 continue
-            hosts = set()
-            for word in words[1:]:
-                if '://' in word:
-                    host = urlsplit(word).hostname
-                    if host:
-                        hosts.add(host.lower())
-                elif re.fullmatch(r'(?:[^@\s]+@)?[A-Za-z0-9.-]+:.*', word):
-                    hosts.add(word.split('@')[-1].split(':')[0].lower())
-            if not hosts and Path(words[0]).name in {'nc', 'ncat', 'netcat', 'ssh'}:
-                operands = [w for w in words[1:] if not w.startswith('-')]
-                if operands:
-                    hosts.add(operands[0].split('@')[-1].lower())
+            name = Path(words[0]).name
+            if name in {'ssh', 'scp', 'sftp', 'ssh-copy-id'}:
+                hosts = _ssh_destination_hosts(words)
+            else:
+                hosts = set()
+                for word in words[1:]:
+                    if '://' in word:
+                        host = urlsplit(word).hostname
+                        if host:
+                            hosts.add(host.lower())
+                    elif re.fullmatch(r'(?:[^@\s]+@)?[A-Za-z0-9.-]+:.*', word):
+                        hosts.add(word.split('@')[-1].split(':')[0].lower())
+                if not hosts and name in {'nc', 'ncat', 'netcat'}:
+                    operands = [w for w in words[1:] if not w.startswith('-')]
+                    if operands:
+                        hosts.add(operands[0].split('@')[-1].lower())
             if not hosts or not hosts <= scope.hosts:
                 rules.append('POL-12:SESSION_SCOPE')
     if scope.roots is not None:
