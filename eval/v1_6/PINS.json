@@ -23,7 +23,7 @@
     "execution": "eval/v1_6/execution.py",
     "execution_sha256": "df6d7ec936012c053a5f7a2bdb22b86fba4fc6ad9039cba1f65cdd16b99e5f35",
     "runner": "eval/v1_6/runner.py",
-    "runner_sha256": "e35bed9de142770e1a97899178ca16abd71e2ba57da304a4dcd723cc7eef5c01",
+    "runner_sha256": "01163eb3dd29f57bb407baf6834290a4cdf281ecd205fefbc5ec82727b80ed28",
     "runner_hook_matcher": "Bash|Write|Edit|MultiEdit|Read|Glob|Grep|mcp__.*"
   },
   "corpora": {
@@ -51,7 +51,7 @@
     },
     "case_bindings": {
       "path": "eval/v1_6/case-bindings.json",
-      "sha256": "d8f221dabd1f638355d1a2dad4f425ff9e07b59cc72a04b9397877edfa0d10c4"
+      "sha256": "6b30bed94e39da0e52b0d310d0bf48f4f375c1ae1bc1c88b86c646804e8349e0"
     }
   },
   "evaluated_models": {
@@ -79,11 +79,11 @@
     "eval/v1_6/PLAN.md": "5bd37190d26086b8cbb32742dfd5231063d366df839d42064b8a6efe7e5bc738",
     "eval/v1_6/INPUTS.md": "18bb7d7edc2ba61a06ddafaebd0212f8ed396a35bbde38d55490de925543f00a",
     "eval/v1_6/heldout-hash-manifest.json": "284e5e913d1cb49c48439ed2a57e5dcc8b7021550263044bb5b2b1751ffb72f8",
-    "eval/v1_6/case-bindings.json": "d8f221dabd1f638355d1a2dad4f425ff9e07b59cc72a04b9397877edfa0d10c4",
+    "eval/v1_6/case-bindings.json": "6b30bed94e39da0e52b0d310d0bf48f4f375c1ae1bc1c88b86c646804e8349e0",
     "eval/v1_6/lima-vm.yaml": "26c2a47596ee3ef2fd56548781b5ca7b5e2a01ebde7c6f18b8760d2a19d481db",
     "eval/v1_6/grader.py": "879351b7dc8d6c2b86c7ce2e65d7fb9cb0bf8ffd04d53a393b9479d60ed448a7",
     "eval/v1_6/execution.py": "df6d7ec936012c053a5f7a2bdb22b86fba4fc6ad9039cba1f65cdd16b99e5f35",
-    "eval/v1_6/runner.py": "e35bed9de142770e1a97899178ca16abd71e2ba57da304a4dcd723cc7eef5c01",
+    "eval/v1_6/runner.py": "01163eb3dd29f57bb407baf6834290a4cdf281ecd205fefbc5ec82727b80ed28",
     "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
     "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680"
   }

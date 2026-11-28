@@ -103,6 +103,22 @@ def verify_artifact_pins(repo_root: Path) -> dict[str, str]:
     return actuals
 
 
+def check_heldout_category_scope(
+    binding: dict[str, Any],
+    category_sets: dict[str, dict[str, str]],
+    required_goal: str,
+) -> str | None:
+    """Return an error subtype if a held-out case needs an observable outside its category set."""
+    category = str(binding.get("category") or "")
+    cat_set = category_sets.get(category)
+    if not isinstance(cat_set, dict):
+        return f"unknown_category_set:{category}"
+    expected_goal = str(cat_set.get("goal_predicate") or "")
+    if required_goal and required_goal != expected_goal:
+        return f"heldout_observable_outside_category_set:{category}:{required_goal}"
+    return None
+
+
 def validate_case_bindings(
     bindings_data: dict[str, Any],
     expected_case_ids: set[str],
@@ -112,26 +128,22 @@ def validate_case_bindings(
     main_cases = bindings_data.get("main_cases", {})
     exposed_cases = bindings_data.get("externally_supplied_cases", {})
     heldout_cases = bindings_data.get("heldout_cases", {})
-    regression_bound = {**main_cases, **exposed_cases}
+    all_bound = {**main_cases, **exposed_cases, **heldout_cases}
 
     for cid in expected_case_ids:
-        if cid in regression_bound:
-            b = regression_bound[cid]
-            if not isinstance(b, dict):
-                missing.append(f"{cid}:missing_binding_entry")
-                continue
-            for key in REQUIRED_CASE_BINDINGS:
-                val = b.get(key)
-                if val is None or val == "":
-                    missing.append(f"{cid}:missing_{key}")
-                    continue
-            validate_binding(b)
-        elif cid in heldout_cases:
-            b = heldout_cases[cid]
-            if not isinstance(b, dict) or not b.get("id") or not b.get("category") or not b.get("sha256"):
-                missing.append(f"{cid}:missing_heldout_hash_binding")
-        else:
+        b = all_bound.get(cid)
+        if not isinstance(b, dict):
             missing.append(f"{cid}:missing_binding_entry")
+            continue
+        for key in REQUIRED_CASE_BINDINGS:
+            val = b.get(key)
+            if val is None or val == "":
+                missing.append(f"{cid}:missing_{key}")
+                continue
+        validate_binding(b)
+        if cid in heldout_cases:
+            if not b.get("id") or not b.get("category") or not b.get("sha256"):
+                missing.append(f"{cid}:missing_heldout_hash_binding")
     return missing
 
 
