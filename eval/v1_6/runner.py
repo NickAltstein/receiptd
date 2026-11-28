@@ -91,14 +91,14 @@ def verify_artifact_pins(repo_root: Path) -> dict[str, str]:
     return actuals
 
 
-def verify_authorization(repo_root: Path, head_commit: str | None = None) -> dict[str, Any]:
-    """Require eval/v1_6/AUTHORIZATION.json matching PLAN.md, PINS.json, and HEAD."""
-    auth_path = repo_root / "eval/v1_6/AUTHORIZATION.json"
-    if not auth_path.is_file():
-        raise ValueError("missing authorization file: eval/v1_6/AUTHORIZATION.json")
-    auth = json.loads(auth_path.read_text(encoding="utf-8"))
+def verify_authorization(repo_root: Path, auth_path: Path | None, head_commit: str | None = None) -> tuple[dict[str, Any], str]:
+    """Require --authorization JSON matching PLAN.md, PINS.json, and HEAD."""
+    if auth_path is None or not auth_path.is_file():
+        raise ValueError(f"missing authorization file: {auth_path}")
+    raw = auth_path.read_bytes()
+    auth = json.loads(raw.decode("utf-8"))
     if auth.get("scoring_authorized") is not True:
-        raise ValueError("scoring_authorized is not true in eval/v1_6/AUTHORIZATION.json")
+        raise ValueError("scoring_authorized is not true in authorization file")
     actual_plan = sha256_file(repo_root / "eval/v1_6/PLAN.md")
     if auth.get("plan_sha256") != actual_plan:
         raise ValueError(f"authorization plan_sha256 mismatch: expected {actual_plan}, got {auth.get('plan_sha256')}")
@@ -109,7 +109,7 @@ def verify_authorization(repo_root: Path, head_commit: str | None = None) -> dic
         raise ValueError(
             f"authorization attested_main_commit mismatch: expected {head_commit}, got {auth.get('attested_main_commit')}"
         )
-    return auth
+    return auth, hashlib.sha256(raw).hexdigest()
 
 
 def verify_heldout_manifest(manifest_data: dict[str, Any], corpus_raw: bytes) -> None:
@@ -372,20 +372,20 @@ def _host_vm_smoke(repo_root: Path, output: Path) -> int:
                 f"{VM_ROOT}/venv/bin/python", "-m", "eval.v1_6.runner", "--repo-root", f"{VM_ROOT}/repo",
                 "--vm-smoke-worker", "--output", f"{VM_ROOT}/smoke-results",
             ], timeout=300)
-            output.mkdir(parents=True, exist_ok=False, mode=0o700)
-            _checked(["limactl", "copy", "--recursive", f"{vm_name}:{VM_ROOT}/smoke-results/", str(output)], timeout=120)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            _checked(["limactl", "copy", "--recursive", f"{vm_name}:{VM_ROOT}/smoke-results", str(output)], timeout=120)
         finally:
             subprocess.run(["limactl", "delete", "--force", vm_name], capture_output=True, check=False)
     return 0
 
 
-def _vm_worker(repo_root: Path, output: Path, ollama_url: str, heldout_corpus: Path | None) -> int:
+def _vm_worker(repo_root: Path, output: Path, ollama_url: str, heldout_corpus: Path | None, auth_path: Path | None) -> int:
     """Run once inside the zero-mount VM; output is copied out unchanged."""
     from importlib.metadata import version
 
     verify_artifact_pins(repo_root)
     commit = (repo_root / "EVAL_COMMIT").read_text(encoding="utf-8").strip()
-    verify_authorization(repo_root, commit)
+    _, auth_sha256 = verify_authorization(repo_root, auth_path, commit)
     model_pins = verify_ollama_pins(ollama_url)
     versions = {name: version(name) for name in ("receiptd", "deepagents-code", "deepagents", "langchain-ollama")}
     if sys.version.split()[0] != VM_PYTHON_VERSION:
@@ -415,6 +415,7 @@ def _vm_worker(repo_root: Path, output: Path, ollama_url: str, heldout_corpus: P
     report_rows = output / "case-results.jsonl"
     run_info = {
         "commit": commit,
+        "authorization_sha256": auth_sha256,
         "installed_versions": versions,
         "python_version": sys.version.split()[0],
         "model_pins": model_pins,
@@ -502,12 +503,12 @@ def _vm_worker(repo_root: Path, output: Path, ollama_url: str, heldout_corpus: P
     return 0
 
 
-def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str, heldout_corpus: Path | None) -> int:
+def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str, heldout_corpus: Path | None, auth_path: Path | None) -> int:
     """Ship committed bytes to a fresh pinned Lima VM and collect private output."""
     if _checked(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo_root).strip():
         raise ValueError("tracked working tree is dirty; commit changes before scored execution")
     commit = _checked(["git", "rev-parse", "HEAD"], cwd=repo_root).strip()
-    verify_authorization(repo_root, commit)
+    _, auth_sha256 = verify_authorization(repo_root, auth_path, commit)
     verify_artifact_pins(repo_root)
     if sha256_file(repo_root / "eval/v1_6/PLAN.md") != plan_sha:
         raise ValueError("approved PLAN.md SHA-256 token mismatch")
@@ -529,6 +530,7 @@ def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str,
             raise RuntimeError("could not archive committed repository")
         _checked(["limactl", "start", "--name", vm_name, str(repo_root / "eval/v1_6/lima-vm.yaml")], timeout=900)
         _checked(["limactl", "copy", str(archive), f"{vm_name}:/tmp/receiptd-v16-repo.tar"], timeout=300)
+        _checked(["limactl", "copy", str(auth_path), f"{vm_name}:/tmp/receiptd-v16-auth.json"], timeout=120)
         if heldout_corpus is not None:
             _checked(["limactl", "copy", str(heldout_corpus), f"{vm_name}:/tmp/receiptd-v16-heldout.json"], timeout=120)
         _checked(["limactl", "shell", "--tty=false", vm_name, "sh", "-lc", vm_setup_command(commit)], timeout=1800)
@@ -552,7 +554,7 @@ def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str,
         worker = ["limactl", "shell", "--tty=false", "--workdir", f"{VM_ROOT}/repo", vm_name,
                   f"{VM_ROOT}/venv/bin/python", "-m", "eval.v1_6.runner", "--repo-root",
                   f"{VM_ROOT}/repo", "--vm-worker", "--output", f"{VM_ROOT}/results",
-                  "--ollama-url", ollama_url]
+                  "--ollama-url", ollama_url, "--authorization", "/tmp/receiptd-v16-auth.json"]
         if heldout_corpus is not None:
             worker.extend(["--heldout-corpus", "/tmp/receiptd-v16-heldout.json"])
         worker_error: Exception | None = None
@@ -567,12 +569,14 @@ def _host_execute(repo_root: Path, plan_sha: str, output: Path, ollama_url: str,
                 tunnel.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 tunnel.kill()
-            output.mkdir(parents=True, exist_ok=False, mode=0o700)
+            output.parent.mkdir(parents=True, exist_ok=True)
             copy = subprocess.run(["limactl", "copy", "--recursive",
-                                   f"{vm_name}:{VM_ROOT}/results/", str(output)],
+                                   f"{vm_name}:{VM_ROOT}/results", str(output)],
                                   capture_output=True, text=True, check=False)
+            output.mkdir(parents=True, exist_ok=True, mode=0o700)
             (output / "collection-status.json").write_text(json.dumps({"vm": vm_name,
-                "copy_exit": copy.returncode, "commit": commit, "plan_sha256": plan_sha}, indent=2) + "\n")
+                "copy_exit": copy.returncode, "commit": commit, "plan_sha256": plan_sha,
+                "authorization_sha256": auth_sha256}, indent=2) + "\n")
             if copy.returncode and worker_error is None:
                 raise RuntimeError("VM result collection failed; original ledgers remain in the VM")
         if worker_error is not None:
@@ -589,6 +593,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--ollama-url", default=VM_OLLAMA_URL)
     parser.add_argument("--heldout-corpus", type=Path, default=None)
+    parser.add_argument("--authorization", type=Path, default=None)
     parser.add_argument("--vm-smoke", action="store_true")
     parser.add_argument("--vm-smoke-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--vm-worker", action="store_true", help=argparse.SUPPRESS)
@@ -611,7 +616,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.vm_worker:
         if not args.output:
             parser.error("--vm-worker requires --output")
-        return _vm_worker(repo_root, args.output, args.ollama_url, args.heldout_corpus)
+        return _vm_worker(repo_root, args.output, args.ollama_url, args.heldout_corpus, args.authorization)
 
     if not args.execute_approved_plan:
         parser.error("refusing execution: pass --execute-approved-plan <sha256>")
@@ -620,7 +625,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"plan SHA-256 mismatch: expected {args.execute_approved_plan}, got {plan_sha}")
     if not args.output:
         parser.error("--execute-approved-plan requires --output")
-    return _host_execute(repo_root, args.execute_approved_plan, args.output, args.ollama_url, args.heldout_corpus)
+    return _host_execute(repo_root, args.execute_approved_plan, args.output, args.ollama_url, args.heldout_corpus, args.authorization)
 
 
 if __name__ == "__main__":
