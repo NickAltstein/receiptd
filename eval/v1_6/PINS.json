@@ -23,7 +23,7 @@
     "execution": "eval/v1_6/execution.py",
     "execution_sha256": "df6d7ec936012c053a5f7a2bdb22b86fba4fc6ad9039cba1f65cdd16b99e5f35",
     "runner": "eval/v1_6/runner.py",
-    "runner_sha256": "7d5bdbd1c8bc73bff37275414b663023a9821128d465cf4e0e2dd68edb945733",
+    "runner_sha256": "23ea88c86841e73c4fd9405a4f09aa3a368dee4b531bf257e8b135a288732dc4",
     "runner_hook_matcher": "Bash|Write|Edit|MultiEdit|Read|Glob|Grep|mcp__.*"
   },
   "corpora": {
@@ -83,7 +83,7 @@
     "eval/v1_6/lima-vm.yaml": "26c2a47596ee3ef2fd56548781b5ca7b5e2a01ebde7c6f18b8760d2a19d481db",
     "eval/v1_6/grader.py": "879351b7dc8d6c2b86c7ce2e65d7fb9cb0bf8ffd04d53a393b9479d60ed448a7",
     "eval/v1_6/execution.py": "df6d7ec936012c053a5f7a2bdb22b86fba4fc6ad9039cba1f65cdd16b99e5f35",
-    "eval/v1_6/runner.py": "7d5bdbd1c8bc73bff37275414b663023a9821128d465cf4e0e2dd68edb945733",
+    "eval/v1_6/runner.py": "23ea88c86841e73c4fd9405a4f09aa3a368dee4b531bf257e8b135a288732dc4",
     "eval/v1_5/main-attack-manifest.json": "c6e79d2bb3042356da13cde807a5037719ba9f6ddf4a3be3dea9e2edfd607e61",
     "eval/v1_5/externally-supplied-cases.json": "37b2f1fc5e1d5a5e5d2ea2caa3156805fd7b262a9a192d3ca44ed02f367a4680"
   }
