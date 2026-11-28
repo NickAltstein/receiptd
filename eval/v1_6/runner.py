@@ -80,6 +80,45 @@ def verify_heldout_manifest(manifest_data: dict[str, Any], corpus_raw: bytes) ->
             raise ValueError(f"held-out case hash mismatch for {cid}")
 
 
+def verify_artifact_pins(repo_root: Path) -> dict[str, str]:
+    """Verify every artifact listed in eval/v1_6/PINS.json before any model call."""
+    pins_path = repo_root / "eval/v1_6/PINS.json"
+    if not pins_path.is_file():
+        raise ValueError("missing pinned file: eval/v1_6/PINS.json")
+    pins = json.loads(pins_path.read_text(encoding="utf-8"))
+    all_pins = pins.get("all_artifact_sha256")
+    if not isinstance(all_pins, dict) or not all_pins:
+        raise ValueError("eval/v1_6/PINS.json missing all_artifact_sha256")
+    actuals: dict[str, str] = {}
+    for rel, expected in all_pins.items():
+        if not expected or str(expected).startswith("TODO"):
+            raise ValueError(f"unresolved pin for {rel}: {expected}")
+        path = repo_root / rel
+        if not path.is_file():
+            raise ValueError(f"missing pinned file: {rel}")
+        actual = sha256_file(path)
+        if actual != expected:
+            raise ValueError(f"pin mismatch for {rel}: expected {expected}, got {actual}")
+        actuals[rel] = actual
+    return actuals
+
+
+def check_heldout_category_scope(
+    binding: dict[str, Any],
+    category_sets: dict[str, dict[str, str]],
+    required_goal: str,
+) -> str | None:
+    """Return an error subtype if a held-out case needs an observable outside its category set."""
+    category = str(binding.get("category") or "")
+    cat_set = category_sets.get(category)
+    if not isinstance(cat_set, dict):
+        return f"unknown_category_set:{category}"
+    expected_goal = str(cat_set.get("goal_predicate") or "")
+    if required_goal and required_goal != expected_goal:
+        return f"heldout_observable_outside_category_set:{category}:{required_goal}"
+    return None
+
+
 def validate_case_bindings(
     bindings_data: dict[str, Any],
     expected_case_ids: set[str],
@@ -102,6 +141,9 @@ def validate_case_bindings(
                 missing.append(f"{cid}:missing_{key}")
                 continue
         validate_binding(b)
+        if cid in heldout_cases:
+            if not b.get("id") or not b.get("category") or not b.get("sha256"):
+                missing.append(f"{cid}:missing_heldout_hash_binding")
     return missing
 
 
@@ -166,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         return hook_wrapper()
 
     repo_root = args.repo_root.resolve()
+    verify_artifact_pins(repo_root)
     if not args.execute_approved_plan:
         parser.error("refusing execution: pass --execute-approved-plan <sha256>")
     plan_sha = sha256_file(repo_root / "eval/v1_6/PLAN.md")
@@ -173,7 +216,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"plan SHA-256 mismatch: expected {args.execute_approved_plan}, got {plan_sha}")
     if not args.output:
         parser.error("--execute-approved-plan requires --output")
-    raise SystemExit("v1.6 pre-score pins are not locked yet; pin PR must land before scored execution")
+    pins = json.loads((repo_root / "eval/v1_6/PINS.json").read_text(encoding="utf-8"))
+    if not pins.get("scoring_authorized"):
+        raise SystemExit("scoring_authorized is false in eval/v1_6/PINS.json")
+    raise SystemExit("v1.6 VM execution requires Nick's approval of PINS.json and PLAN.md")
 
 
 if __name__ == "__main__":
